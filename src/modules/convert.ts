@@ -1,0 +1,442 @@
+// Core conversion flow: read PDF → POST to docling-serve → attach .md back.
+//
+// All docling-serve options live in plugin prefs (see addon/prefs.js). They are
+// flattened into individual multipart form fields here; there is NO `options`
+// JSON blob — the server schema is flat.
+//
+// Verified against docling-serve 1.18.0 on 2026-05.
+
+import { getPref } from "../utils/prefs";
+import {
+  hasMarkdownChild,
+  getLocalFilePath,
+  isConvertiblePdf,
+} from "../utils/zotero";
+
+const LOG = "[zotero-docling]";
+
+/**
+ * Z9's plugin sandbox exposes some Web APIs as bare globals (e.g. fetch) but
+ * not others (e.g. FormData, Blob). Prefer bare globals when present, fall
+ * back to a window context when not.
+ */
+function getWebApis(): {
+  FormData: typeof FormData;
+  Blob: typeof Blob;
+  fetch: typeof fetch;
+} {
+  const g = globalThis as any;
+  const win =
+    (Zotero as any).getMainWindow?.() ??
+    (Zotero as any).getActiveZoteroPane?.()?.document?.defaultView;
+
+  const FormDataCtor = g.FormData ?? win?.FormData;
+  const BlobCtor = g.Blob ?? win?.Blob;
+  const fetchFn = g.fetch ?? (win?.fetch ? win.fetch.bind(win) : undefined);
+
+  if (!FormDataCtor || !BlobCtor || !fetchFn) {
+    throw new Error(
+      `Web API unavailable — FormData=${!!FormDataCtor} Blob=${!!BlobCtor} fetch=${!!fetchFn}`,
+    );
+  }
+  return { FormData: FormDataCtor, Blob: BlobCtor, fetch: fetchFn };
+}
+
+export type ConvertResult =
+  | { status: "ok"; attachmentID: number }
+  | { status: "skipped"; reason: string }
+  | { status: "error"; message: string };
+
+/** docling-serve response envelope (subset we read). */
+interface ConvertResponse {
+  document?: {
+    filename?: string;
+    md_content?: string;
+  };
+  status?:
+    | "pending"
+    | "started"
+    | "success"
+    | "partial_success"
+    | "failure"
+    | "skipped";
+  errors?: Array<{
+    component_type?: string;
+    module_name?: string;
+    error_message?: string;
+  }>;
+  processing_time?: number;
+}
+
+/**
+ * Build the multipart body for POST /v1/convert/file by reading all relevant
+ * prefs and turning them into flat form fields. The `advancedJson` pref is
+ * merged last, so it overrides anything else.
+ */
+function buildConvertForm(
+  pdfBytes: Uint8Array,
+  filename: string,
+  api: { FormData: typeof FormData; Blob: typeof Blob },
+): FormData {
+  const form = new api.FormData();
+  form.append(
+    "files",
+    new api.Blob([pdfBytes], { type: "application/pdf" }),
+    filename,
+  );
+
+  // Always request markdown — that's the whole point of the plugin.
+  form.append("to_formats", "md");
+  form.append("abort_on_error", "false");
+
+  // --- Tier 1: essentials ---
+  form.append("pipeline", String(getPref("pipeline") ?? "standard"));
+  form.append("do_ocr", String(getPref("doOcr") ?? true));
+  form.append("force_ocr", String(getPref("forceOcr") ?? false));
+  form.append("table_mode", String(getPref("tableMode") ?? "accurate"));
+
+  // --- Tier 2: enrichments ---
+  form.append(
+    "do_formula_enrichment",
+    String(getPref("doFormulaEnrichment") ?? false),
+  );
+  form.append(
+    "do_code_enrichment",
+    String(getPref("doCodeEnrichment") ?? false),
+  );
+  form.append(
+    "do_chart_extraction",
+    String(getPref("doChartExtraction") ?? false),
+  );
+  form.append(
+    "do_picture_classification",
+    String(getPref("doPictureClassification") ?? false),
+  );
+
+  // --- Tier 3: VLM (only meaningful when pipeline=vlm or doPictureDescription) ---
+  const vlmPreset = (getPref("vlmPreset") ?? "default") as string;
+  if (vlmPreset) form.append("vlm_pipeline_preset", vlmPreset);
+
+  const doPicDesc = (getPref("doPictureDescription") ?? false) as boolean;
+  form.append("do_picture_description", String(doPicDesc));
+  if (doPicDesc) {
+    const picPreset = (getPref("pictureDescriptionPreset") ??
+      "default") as string;
+    if (picPreset) form.append("picture_description_preset", picPreset);
+  }
+
+  // ocr_lang is a repeated field — server reads it as a list
+  const ocrLangRaw = (getPref("ocrLang") ?? "") as string;
+  for (const lang of ocrLangRaw.split(",").map((s) => s.trim()).filter(Boolean)) {
+    form.append("ocr_lang", lang);
+  }
+
+  // --- Tier 4: advanced JSON merge ---
+  const advRaw = (getPref("advancedJson") ?? "") as string;
+  if (advRaw.trim().length > 0) {
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(advRaw);
+    } catch (e) {
+      throw new Error(
+        `advancedJson preference is not valid JSON: ${(e as Error).message}`,
+      );
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      throw new Error("advancedJson must be a JSON object");
+    }
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value === null || value === undefined) continue;
+      // Remove any earlier value we set for this key so advanced wins.
+      form.delete(key);
+      if (Array.isArray(value)) {
+        for (const v of value) form.append(key, String(v));
+      } else if (typeof value === "object") {
+        form.append(key, JSON.stringify(value));
+      } else {
+        form.append(key, String(value));
+      }
+    }
+  }
+
+  return form;
+}
+
+/** Status tags applied to the PARENT item after a batch of conversions. */
+const TAG_DONE = "docling/done";
+const TAG_INCOMPLETE = "docling/incomplete";
+const TAG_ERROR = "docling/error";
+const ALL_STATUS_TAGS = [TAG_DONE, TAG_INCOMPLETE, TAG_ERROR];
+
+/**
+ * Aggregate a batch of (item, result) pairs by parent item and apply exactly
+ * one status tag per parent — replacing any previous docling/* tag. Skipped
+ * results don't change the existing tag (a re-run that's all-skipped leaves
+ * a previous docling/done untouched).
+ *
+ * Tag scheme:
+ *   - all OK (no errors)        → docling/done
+ *   - some OK + some errors     → docling/incomplete
+ *   - all errors (no OK)        → docling/error
+ *   - all skipped               → no change
+ */
+export async function applyStatusTagsToParents(
+  results: Array<{ item: Zotero.Item; result: ConvertResult }>,
+): Promise<void> {
+  type Stats = { ok: number; error: number; skipped: number };
+  const perParent = new Map<number, Stats>();
+
+  for (const { item, result } of results) {
+    const parentID = item.parentItemID;
+    if (!parentID) continue;
+    const s = perParent.get(parentID as number) ?? { ok: 0, error: 0, skipped: 0 };
+    if (result.status === "ok") s.ok++;
+    else if (result.status === "error") s.error++;
+    else s.skipped++;
+    perParent.set(parentID as number, s);
+  }
+
+  for (const [parentID, s] of perParent) {
+    if (s.ok === 0 && s.error === 0) continue; // all-skipped — leave existing tag
+    const tag =
+      s.error === 0 ? TAG_DONE : s.ok === 0 ? TAG_ERROR : TAG_INCOMPLETE;
+    try {
+      const parent = Zotero.Items.get(parentID);
+      if (!parent) continue;
+      for (const t of ALL_STATUS_TAGS) parent.removeTag(t);
+      parent.addTag(tag, 0);
+      await parent.saveTx();
+    } catch (e) {
+      Zotero.debug(
+        `${LOG} applyStatusTags parent=${parentID} failed (non-fatal): ${(e as Error).message}`,
+      );
+    }
+  }
+}
+
+/** Concise "errors[]" rendering for surfacing in toasts and logs. */
+function formatServerErrors(data: ConvertResponse): string {
+  const parts = (data.errors ?? [])
+    .map((e) => e?.error_message ?? JSON.stringify(e))
+    .filter(Boolean);
+  return parts.join(" | ") || `status="${data.status ?? "unknown"}"`;
+}
+
+/**
+ * Convert a single PDF attachment item.
+ * Caller is responsible for any UI feedback AND for applying status tags
+ * (call `applyStatusTagsToParents` after a batch) — this function only
+ * returns the per-attachment result.
+ */
+export async function convertAttachment(
+  item: Zotero.Item,
+): Promise<ConvertResult> {
+  // --- 1. Guard checks ---
+  if (!(await isConvertiblePdf(item))) {
+    return {
+      status: "skipped",
+      reason: "Not a locally-stored PDF attachment with a parent item",
+    };
+  }
+  const parentItemID = item.parentItemID as number;
+
+  // --- 2. Resolve local file (needed early for the filename-aware skip) ---
+  const pdfPath = await getLocalFilePath(item);
+  if (!pdfPath) {
+    return { status: "error", message: "PDF file not available locally" };
+  }
+  const filename = PathUtils.filename(pdfPath);
+
+  // --- 3. Skip-if-exists ---
+  // Match on filename so siblings under the same parent don't shadow each
+  // other: paper.pdf only skips if paper.md already exists.
+  const skipIfExists = (getPref("skipIfExists") ?? true) as boolean;
+  if (skipIfExists && (await hasMarkdownChild(parentItemID, filename))) {
+    return { status: "skipped", reason: "Markdown attachment already exists" };
+  }
+
+  // --- 4. Read bytes ---
+  let pdfBytes: Uint8Array;
+  try {
+    pdfBytes = await IOUtils.read(pdfPath);
+  } catch (e) {
+    return {
+      status: "error",
+      message: `Failed to read PDF: ${(e as Error).message}`,
+    };
+  }
+
+  // --- 5. Build form + POST ---
+  const serverUrl = ((getPref("serverUrl") as string) ?? "")
+    .replace(/\/+$/, "")
+    .trim();
+  if (!serverUrl) {
+    return { status: "error", message: "serverUrl preference is empty" };
+  }
+
+  let api: ReturnType<typeof getWebApis>;
+  try {
+    api = getWebApis();
+  } catch (e) {
+    return { status: "error", message: (e as Error).message };
+  }
+
+  let form: FormData;
+  try {
+    form = buildConvertForm(pdfBytes, filename, api);
+  } catch (e) {
+    return { status: "error", message: (e as Error).message };
+  }
+
+  Zotero.debug(`${LOG} POST ${serverUrl}/v1/convert/file file=${filename}`);
+  let response: Response;
+  try {
+    response = await api.fetch(`${serverUrl}/v1/convert/file`, {
+      method: "POST",
+      body: form,
+    });
+  } catch (e) {
+    Zotero.debug(`${LOG} fetch failed: ${(e as Error).message}`);
+    return { status: "error", message: "Server not reachable" };
+  }
+
+  // --- 6. Parse response (server returns JSON even on errors) ---
+  // HTTP 504 / proxy errors typically have plain-text bodies — handle the
+  // non-JSON case gracefully using the HTTP statusText.
+  const httpLabel = response.statusText
+    ? `HTTP ${response.status} ${response.statusText}`
+    : `HTTP ${response.status}`;
+
+  let data: ConvertResponse = {};
+  let rawBody = "";
+  try {
+    rawBody = await response.text();
+    if (rawBody) data = JSON.parse(rawBody) as ConvertResponse;
+  } catch {
+    if (!response.ok) {
+      return { status: "error", message: httpLabel };
+    }
+    return {
+      status: "error",
+      message: `Non-JSON response (${httpLabel}): ${rawBody.slice(0, 200)}`,
+    };
+  }
+
+  if (!response.ok) {
+    // 404 with "preset … is not allowed" is the disallowed-VLM-preset signal.
+    const errs = formatServerErrors(data);
+    const hasDetail = errs && !errs.startsWith("status=");
+    return {
+      status: "error",
+      message: hasDetail ? `${httpLabel}: ${errs}` : httpLabel,
+    };
+  }
+
+  const okStatus =
+    data.status === "success" || data.status === "partial_success";
+  if (!okStatus) {
+    return {
+      status: "error",
+      message: `Conversion ${data.status ?? "unknown"}: ${formatServerErrors(data)}`,
+    };
+  }
+  const markdown = data.document?.md_content;
+  if (typeof markdown !== "string" || markdown.length === 0) {
+    return { status: "error", message: "Server returned empty md_content" };
+  }
+
+  // --- 7. Write markdown to a temp file ---
+  // Use a per-item subdir so the temp file can keep the expected name
+  // (paper.md instead of ABCDEFG1.md). This matters because Zotero's
+  // attachment.attachmentFilename comes from the source file's basename, and
+  // the skipIfExists check matches on that exact name on subsequent runs.
+  const mdName = filename.replace(/\.pdf$/i, ".md");
+  const tmpDir = PathUtils.join(PathUtils.tempDir, `zd-${item.key}`);
+  const tmpPath = PathUtils.join(tmpDir, mdName);
+  try {
+    await IOUtils.makeDirectory(tmpDir, { ignoreExisting: true });
+    await IOUtils.writeUTF8(tmpPath, markdown);
+  } catch (e) {
+    await IOUtils.remove(tmpDir, { recursive: true }).catch(() => {});
+    return {
+      status: "error",
+      message: `Failed to write temp file: ${(e as Error).message}`,
+    };
+  }
+
+  // --- 8. Import as a Zotero attachment ---
+  let newAttachment: Zotero.Item;
+  try {
+    newAttachment = await Zotero.Attachments.importFromFile({
+      file: tmpPath,
+      parentItemID,
+      contentType: "text/markdown",
+    });
+  } catch (e) {
+    await IOUtils.remove(tmpDir, { recursive: true }).catch(() => {});
+    return {
+      status: "error",
+      message: `Failed to import attachment: ${(e as Error).message}`,
+    };
+  }
+
+  // --- 9. Set a readable title (paper.pdf → paper.md). Filename was already
+  // set correctly by the import (from tmpPath's basename). ---
+  try {
+    newAttachment.setField("title", mdName);
+    await newAttachment.saveTx();
+  } catch (e) {
+    Zotero.debug(`${LOG} title set failed (non-fatal): ${(e as Error).message}`);
+  }
+
+  // --- 10. Best-effort cleanup of the per-item temp subdir ---
+  await IOUtils.remove(tmpDir, { recursive: true }).catch(() => {});
+
+  Zotero.debug(
+    `${LOG} ok item=${item.key} attachment=${newAttachment.id} md=${markdown.length}b in ${data.processing_time ?? "?"}s`,
+  );
+  return { status: "ok", attachmentID: newAttachment.id };
+}
+
+/**
+ * Lightweight liveness check used by the "Test Connection" button in prefs.
+ * Returns the resolved server URL on success so the UI can display it.
+ */
+/**
+ * Quick "is the server up" check for batch orchestrators to call before
+ * looping. Reads serverUrl from prefs and hits /health. Returns true on
+ * success; on failure the caller should toast a single concise message and
+ * skip the batch — avoids spamming N "Cannot reach docling-serve" toasts.
+ */
+export async function preflightServer(): Promise<boolean> {
+  const serverUrl = ((getPref("serverUrl") as string) ?? "")
+    .replace(/\/+$/, "")
+    .trim();
+  if (!serverUrl) return false;
+  const r = await testServerConnection(serverUrl);
+  return r.ok;
+}
+
+export async function testServerConnection(
+  serverUrl: string,
+): Promise<{ ok: true; serverUrl: string } | { ok: false; message: string }> {
+  const url = serverUrl.replace(/\/+$/, "").trim();
+  if (!url) return { ok: false, message: "Server URL is empty" };
+  let api: ReturnType<typeof getWebApis>;
+  try {
+    api = getWebApis();
+  } catch (e) {
+    return { ok: false, message: (e as Error).message };
+  }
+  try {
+    const r = await api.fetch(`${url}/health`, { method: "GET" });
+    if (!r.ok) return { ok: false, message: `HTTP ${r.status}` };
+    const body = await r.json().catch(() => ({}) as { status?: string });
+    if ((body as { status?: string }).status === "ok") {
+      return { ok: true, serverUrl: url };
+    }
+    return { ok: false, message: `Unexpected /health body: ${JSON.stringify(body)}` };
+  } catch (e) {
+    return { ok: false, message: (e as Error).message };
+  }
+}

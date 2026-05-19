@@ -1,0 +1,209 @@
+<linkset>
+  <html:link rel="localization" href="__addonRef__-preferences.ftl" />
+</linkset>
+<vbox
+  onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
+>
+  <!-- ============================================================ -->
+  <!--  Server                                                       -->
+  <!-- ============================================================ -->
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-server-title"></html:h2></label>
+
+    <hbox align="center">
+      <html:label
+        for="zotero-docling-server-url"
+        data-l10n-id="pref-server-url"
+        style="min-width: 110px"
+      ></html:label>
+      <html:input
+        type="text"
+        id="zotero-docling-server-url"
+        preference="serverUrl"
+        style="flex: 1"
+      ></html:input>
+      <button
+        id="zotero-docling-test-connection"
+        data-l10n-id="pref-test-connection"
+      ></button>
+    </hbox>
+    <hbox align="center">
+      <html:label
+        id="zotero-docling-test-result"
+        style="margin-left: 110px; font-style: italic; min-height: 1.4em"
+      ></html:label>
+    </hbox>
+  </groupbox>
+
+  <!-- ============================================================ -->
+  <!--  Behavior                                                     -->
+  <!-- ============================================================ -->
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-behavior-title"></html:h2></label>
+    <checkbox
+      id="zotero-docling-auto-convert"
+      preference="autoConvert"
+      data-l10n-id="pref-auto-convert"
+    />
+    <checkbox
+      id="zotero-docling-skip-if-exists"
+      preference="skipIfExists"
+      data-l10n-id="pref-skip-if-exists"
+    />
+  </groupbox>
+
+  <!-- ============================================================ -->
+  <!--  Conversion (Tier 1: essentials)                              -->
+  <!-- ============================================================ -->
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-conversion-title"></html:h2></label>
+
+    <!-- Pipeline -->
+    <hbox align="center">
+      <html:label data-l10n-id="pref-pipeline" style="min-width: 110px"></html:label>
+      <radiogroup
+        id="zotero-docling-pipeline-group"
+        orient="horizontal"
+        preference="pipeline"
+      >
+        <radio value="standard" data-l10n-id="pref-pipeline-standard" />
+        <radio value="vlm" data-l10n-id="pref-pipeline-vlm" />
+      </radiogroup>
+    </hbox>
+
+    <!-- OCR -->
+    <checkbox preference="doOcr"     data-l10n-id="pref-do-ocr" />
+    <checkbox preference="forceOcr"  data-l10n-id="pref-force-ocr" />
+
+    <!-- OCR language -->
+    <hbox align="center">
+      <html:label
+        for="zotero-docling-ocr-lang"
+        data-l10n-id="pref-ocr-lang"
+        style="min-width: 110px"
+      ></html:label>
+      <html:input
+        type="text"
+        id="zotero-docling-ocr-lang"
+        preference="ocrLang"
+        placeholder="e.g. en,fr,de"
+        style="flex: 1"
+      ></html:input>
+    </hbox>
+
+    <!-- Table mode -->
+    <hbox align="center">
+      <html:label data-l10n-id="pref-table-mode" style="min-width: 110px"></html:label>
+      <menulist preference="tableMode">
+        <menupopup>
+          <menuitem value="accurate" label="accurate" />
+          <menuitem value="fast"     label="fast" />
+        </menupopup>
+      </menulist>
+    </hbox>
+  </groupbox>
+
+  <!-- ============================================================ -->
+  <!--  Enrichments (Tier 2)                                         -->
+  <!-- ============================================================ -->
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-enrichments-title"></html:h2></label>
+    <description data-l10n-id="pref-enrichments-help"></description>
+    <checkbox preference="doFormulaEnrichment"     data-l10n-id="pref-do-formula" />
+    <checkbox preference="doCodeEnrichment"        data-l10n-id="pref-do-code" />
+    <checkbox preference="doChartExtraction"       data-l10n-id="pref-do-chart" />
+    <checkbox preference="doPictureClassification" data-l10n-id="pref-do-picture-class" />
+  </groupbox>
+
+  <!-- ============================================================ -->
+  <!--  VLM (Tier 3) — only visible when pipeline=vlm                -->
+  <!-- ============================================================ -->
+  <groupbox id="zotero-docling-vlm-section" hidden="true">
+    <label><html:h2 data-l10n-id="pref-vlm-title"></html:h2></label>
+    <description data-l10n-id="pref-vlm-help"></description>
+
+    <hbox align="center">
+      <html:label data-l10n-id="pref-vlm-preset" style="min-width: 130px"></html:label>
+      <menulist
+        id="zotero-docling-vlm-preset-menu"
+        preference="vlmPreset"
+      >
+        <menupopup>
+          <menuitem value="default"        label="default" />
+          <menuitem value="smoldocling"    label="smoldocling" />
+          <menuitem value="deepseek_ocr"   label="deepseek_ocr" />
+          <menuitem value="granite_vision" label="granite_vision" />
+          <menuitem value="pixtral"        label="pixtral" />
+          <menuitem value="got_ocr"        label="got_ocr" />
+          <menuitem value="phi4"           label="phi4" />
+          <menuitem value="qwen"           label="qwen" />
+          <menuitem value="nanonets_ocr2"  label="nanonets_ocr2" />
+          <menuitem value="gemma_12b"      label="gemma_12b" />
+          <menuitem value="gemma_27b"      label="gemma_27b" />
+          <menuitem value="dolphin"        label="dolphin" />
+          <menuitem value="glm_ocr"        label="glm_ocr" />
+          <menuitem value="lightonocr"     label="lightonocr" />
+          <menuitem value="falcon_ocr"     label="falcon_ocr" />
+          <menuitem value="__custom__"     data-l10n-id="pref-preset-custom" />
+        </menupopup>
+      </menulist>
+      <html:input
+        type="text"
+        id="zotero-docling-vlm-preset-custom"
+        preference="vlmPreset"
+        placeholder="custom preset name"
+        hidden="true"
+        style="flex: 1"
+      ></html:input>
+    </hbox>
+
+    <checkbox preference="doPictureDescription" data-l10n-id="pref-do-picture-desc" />
+
+    <hbox align="center">
+      <html:label data-l10n-id="pref-pic-preset" style="min-width: 130px"></html:label>
+      <menulist
+        id="zotero-docling-pic-preset-menu"
+        preference="pictureDescriptionPreset"
+      >
+        <menupopup>
+          <menuitem value="default"        label="default" />
+          <menuitem value="smolvlm"        label="smolvlm" />
+          <menuitem value="granite_vision" label="granite_vision" />
+          <menuitem value="__custom__"     data-l10n-id="pref-preset-custom" />
+        </menupopup>
+      </menulist>
+      <html:input
+        type="text"
+        id="zotero-docling-pic-preset-custom"
+        preference="pictureDescriptionPreset"
+        placeholder="custom preset name"
+        hidden="true"
+        style="flex: 1"
+      ></html:input>
+    </hbox>
+  </groupbox>
+
+  <!-- ============================================================ -->
+  <!--  Advanced (Tier 4)                                            -->
+  <!-- ============================================================ -->
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-advanced-title"></html:h2></label>
+    <description data-l10n-id="pref-advanced-help"></description>
+    <html:textarea
+      id="zotero-docling-advanced-json"
+      preference="advancedJson"
+      rows="6"
+      style="font-family: monospace; width: 100%"
+      placeholder='{ "images_scale": 3.0, "pdf_backend": "docling_parse", "page_range": [1, 5] }'
+    ></html:textarea>
+  </groupbox>
+
+  <!-- Build info -->
+  <vbox>
+    <html:label
+      data-l10n-id="pref-build-info"
+      data-l10n-args='{"time": "__buildTime__","name": "__addonName__","version":"__buildVersion__"}'
+      style="font-size: 0.85em; opacity: 0.6"
+    ></html:label>
+  </vbox>
+</vbox>
