@@ -73,9 +73,7 @@ export async function isConvertiblePdf(item: Zotero.Item): Promise<boolean> {
   if (item.attachmentContentType !== "application/pdf") return false;
   if (!item.parentItemID) return false;
   // LINK_MODE_LINKED_URL means there is no local file — only a URL bookmark.
-  if (
-    item.attachmentLinkMode === Zotero.Attachments.LINK_MODE_LINKED_URL
-  ) {
+  if (item.attachmentLinkMode === Zotero.Attachments.LINK_MODE_LINKED_URL) {
     return false;
   }
   const path = await getLocalFilePath(item);

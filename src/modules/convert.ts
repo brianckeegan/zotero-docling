@@ -127,7 +127,10 @@ function buildConvertForm(
 
   // ocr_lang is a repeated field — server reads it as a list
   const ocrLangRaw = (getPref("ocrLang") ?? "") as string;
-  for (const lang of ocrLangRaw.split(",").map((s) => s.trim()).filter(Boolean)) {
+  for (const lang of ocrLangRaw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)) {
     form.append("ocr_lang", lang);
   }
 
@@ -142,7 +145,11 @@ function buildConvertForm(
         `advancedJson preference is not valid JSON: ${(e as Error).message}`,
       );
     }
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
       throw new Error("advancedJson must be a JSON object");
     }
     for (const [key, value] of Object.entries(parsed)) {
@@ -189,7 +196,11 @@ export async function applyStatusTagsToParents(
   for (const { item, result } of results) {
     const parentID = item.parentItemID;
     if (!parentID) continue;
-    const s = perParent.get(parentID as number) ?? { ok: 0, error: 0, skipped: 0 };
+    const s = perParent.get(parentID as number) ?? {
+      ok: 0,
+      error: 0,
+      skipped: 0,
+    };
     if (result.status === "ok") s.ok++;
     else if (result.status === "error") s.error++;
     else s.skipped++;
@@ -386,7 +397,9 @@ export async function convertAttachment(
     newAttachment.setField("title", mdName);
     await newAttachment.saveTx();
   } catch (e) {
-    Zotero.debug(`${LOG} title set failed (non-fatal): ${(e as Error).message}`);
+    Zotero.debug(
+      `${LOG} title set failed (non-fatal): ${(e as Error).message}`,
+    );
   }
 
   // --- 10. Best-effort cleanup of the per-item temp subdir ---
@@ -435,7 +448,10 @@ export async function testServerConnection(
     if ((body as { status?: string }).status === "ok") {
       return { ok: true, serverUrl: url };
     }
-    return { ok: false, message: `Unexpected /health body: ${JSON.stringify(body)}` };
+    return {
+      ok: false,
+      message: `Unexpected /health body: ${JSON.stringify(body)}`,
+    };
   } catch (e) {
     return { ok: false, message: (e as Error).message };
   }

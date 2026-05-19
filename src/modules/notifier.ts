@@ -101,7 +101,8 @@ async function processPending(): Promise<void> {
     let failed = 0;
     const skipReasons = new Set<string>();
     const failMessages: string[] = [];
-    const batchResults: Array<{ item: Zotero.Item; result: ConvertResult }> = [];
+    const batchResults: Array<{ item: Zotero.Item; result: ConvertResult }> =
+      [];
     for (const id of ids) {
       const item = Zotero.Items.get(id);
       if (!item) continue;

@@ -1,9 +1,7 @@
 <linkset>
   <html:link rel="localization" href="__addonRef__-preferences.ftl" />
 </linkset>
-<vbox
-  onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
->
+<vbox onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })">
   <!-- ============================================================ -->
   <!--  Server                                                       -->
   <!-- ============================================================ -->
@@ -60,7 +58,10 @@
 
     <!-- Pipeline -->
     <hbox align="center">
-      <html:label data-l10n-id="pref-pipeline" style="min-width: 110px"></html:label>
+      <html:label
+        data-l10n-id="pref-pipeline"
+        style="min-width: 110px"
+      ></html:label>
       <radiogroup
         id="zotero-docling-pipeline-group"
         orient="horizontal"
@@ -72,8 +73,8 @@
     </hbox>
 
     <!-- OCR -->
-    <checkbox preference="doOcr"     data-l10n-id="pref-do-ocr" />
-    <checkbox preference="forceOcr"  data-l10n-id="pref-force-ocr" />
+    <checkbox preference="doOcr" data-l10n-id="pref-do-ocr" />
+    <checkbox preference="forceOcr" data-l10n-id="pref-force-ocr" />
 
     <!-- OCR language -->
     <hbox align="center">
@@ -93,11 +94,14 @@
 
     <!-- Table mode -->
     <hbox align="center">
-      <html:label data-l10n-id="pref-table-mode" style="min-width: 110px"></html:label>
+      <html:label
+        data-l10n-id="pref-table-mode"
+        style="min-width: 110px"
+      ></html:label>
       <menulist preference="tableMode">
         <menupopup>
           <menuitem value="accurate" label="accurate" />
-          <menuitem value="fast"     label="fast" />
+          <menuitem value="fast" label="fast" />
         </menupopup>
       </menulist>
     </hbox>
@@ -109,10 +113,13 @@
   <groupbox>
     <label><html:h2 data-l10n-id="pref-enrichments-title"></html:h2></label>
     <description data-l10n-id="pref-enrichments-help"></description>
-    <checkbox preference="doFormulaEnrichment"     data-l10n-id="pref-do-formula" />
-    <checkbox preference="doCodeEnrichment"        data-l10n-id="pref-do-code" />
-    <checkbox preference="doChartExtraction"       data-l10n-id="pref-do-chart" />
-    <checkbox preference="doPictureClassification" data-l10n-id="pref-do-picture-class" />
+    <checkbox preference="doFormulaEnrichment" data-l10n-id="pref-do-formula" />
+    <checkbox preference="doCodeEnrichment" data-l10n-id="pref-do-code" />
+    <checkbox preference="doChartExtraction" data-l10n-id="pref-do-chart" />
+    <checkbox
+      preference="doPictureClassification"
+      data-l10n-id="pref-do-picture-class"
+    />
   </groupbox>
 
   <!-- ============================================================ -->
@@ -123,28 +130,28 @@
     <description data-l10n-id="pref-vlm-help"></description>
 
     <hbox align="center">
-      <html:label data-l10n-id="pref-vlm-preset" style="min-width: 130px"></html:label>
-      <menulist
-        id="zotero-docling-vlm-preset-menu"
-        preference="vlmPreset"
-      >
+      <html:label
+        data-l10n-id="pref-vlm-preset"
+        style="min-width: 130px"
+      ></html:label>
+      <menulist id="zotero-docling-vlm-preset-menu" preference="vlmPreset">
         <menupopup>
-          <menuitem value="default"        label="default" />
-          <menuitem value="smoldocling"    label="smoldocling" />
-          <menuitem value="deepseek_ocr"   label="deepseek_ocr" />
+          <menuitem value="default" label="default" />
+          <menuitem value="smoldocling" label="smoldocling" />
+          <menuitem value="deepseek_ocr" label="deepseek_ocr" />
           <menuitem value="granite_vision" label="granite_vision" />
-          <menuitem value="pixtral"        label="pixtral" />
-          <menuitem value="got_ocr"        label="got_ocr" />
-          <menuitem value="phi4"           label="phi4" />
-          <menuitem value="qwen"           label="qwen" />
-          <menuitem value="nanonets_ocr2"  label="nanonets_ocr2" />
-          <menuitem value="gemma_12b"      label="gemma_12b" />
-          <menuitem value="gemma_27b"      label="gemma_27b" />
-          <menuitem value="dolphin"        label="dolphin" />
-          <menuitem value="glm_ocr"        label="glm_ocr" />
-          <menuitem value="lightonocr"     label="lightonocr" />
-          <menuitem value="falcon_ocr"     label="falcon_ocr" />
-          <menuitem value="__custom__"     data-l10n-id="pref-preset-custom" />
+          <menuitem value="pixtral" label="pixtral" />
+          <menuitem value="got_ocr" label="got_ocr" />
+          <menuitem value="phi4" label="phi4" />
+          <menuitem value="qwen" label="qwen" />
+          <menuitem value="nanonets_ocr2" label="nanonets_ocr2" />
+          <menuitem value="gemma_12b" label="gemma_12b" />
+          <menuitem value="gemma_27b" label="gemma_27b" />
+          <menuitem value="dolphin" label="dolphin" />
+          <menuitem value="glm_ocr" label="glm_ocr" />
+          <menuitem value="lightonocr" label="lightonocr" />
+          <menuitem value="falcon_ocr" label="falcon_ocr" />
+          <menuitem value="__custom__" data-l10n-id="pref-preset-custom" />
         </menupopup>
       </menulist>
       <html:input
@@ -157,19 +164,25 @@
       ></html:input>
     </hbox>
 
-    <checkbox preference="doPictureDescription" data-l10n-id="pref-do-picture-desc" />
+    <checkbox
+      preference="doPictureDescription"
+      data-l10n-id="pref-do-picture-desc"
+    />
 
     <hbox align="center">
-      <html:label data-l10n-id="pref-pic-preset" style="min-width: 130px"></html:label>
+      <html:label
+        data-l10n-id="pref-pic-preset"
+        style="min-width: 130px"
+      ></html:label>
       <menulist
         id="zotero-docling-pic-preset-menu"
         preference="pictureDescriptionPreset"
       >
         <menupopup>
-          <menuitem value="default"        label="default" />
-          <menuitem value="smolvlm"        label="smolvlm" />
+          <menuitem value="default" label="default" />
+          <menuitem value="smolvlm" label="smolvlm" />
           <menuitem value="granite_vision" label="granite_vision" />
-          <menuitem value="__custom__"     data-l10n-id="pref-preset-custom" />
+          <menuitem value="__custom__" data-l10n-id="pref-preset-custom" />
         </menupopup>
       </menulist>
       <html:input
