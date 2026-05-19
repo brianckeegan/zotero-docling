@@ -143,6 +143,7 @@ function buildConvertForm(
     } catch (e) {
       throw new Error(
         `advancedJson preference is not valid JSON: ${(e as Error).message}`,
+        { cause: e },
       );
     }
     if (
