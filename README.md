@@ -1,11 +1,11 @@
-# Zotero Docling
+# zotero-docling
 
 [![Release](https://img.shields.io/github/v/release/max3925vats/zotero-docling?style=flat-square)](https://github.com/max3925vats/zotero-docling/releases/latest)
 [![License](https://img.shields.io/github/license/max3925vats/zotero-docling?style=flat-square)](LICENSE)
 [![Downloads](https://img.shields.io/github/downloads/max3925vats/zotero-docling/total?style=flat-square)](https://github.com/max3925vats/zotero-docling/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/max3925vats/zotero-docling/ci.yml?style=flat-square&label=CI)](https://github.com/max3925vats/zotero-docling/actions)
 [![Using Zotero Plugin Template](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github)](https://github.com/windingwind/zotero-plugin-template)
-[![Powered by Docling](https://img.shields.io/badge/Powered%20by-Docling-052FAD?style=flat-square&logo=ibm&logoColor=white)](https://github.com/docling-project/docling)
+[![Powered by Docling](https://img.shields.io/badge/Powered%20by-Docling-052FAD?style=flat-square)](https://github.com/docling-project/docling)
 
 ---
 
