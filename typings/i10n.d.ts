@@ -36,6 +36,7 @@ export type FluentMessageId =
   | 'pref-enrichments-help'
   | 'pref-enrichments-title'
   | 'pref-export-folder'
+  | 'pref-export-folder-help'
   | 'pref-force-ocr'
   | 'pref-frontmatter-help'
   | 'pref-help'
