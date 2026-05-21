@@ -19,7 +19,7 @@ pref-add-frontmatter =
     .label = Prepend YAML frontmatter with Zotero metadata
 pref-frontmatter-help = Adds title, authors, year, doi, url, zotero_key, citation_key to every .md output as a YAML --- block at the top.
 pref-export-folder = Export folder
-pref-export-folder-help = Absolute path. If set, every converted .md is ALSO written here as "{citationKey || zoteroKey}.md". Leave empty to disable.
+pref-export-folder-help = Absolute path. If set, every converted .md is ALSO written here. Filename uses the item's citation key when available, otherwise the Zotero item key. Leave empty to disable.
 
 pref-conversion-title = Conversion
 pref-pipeline = Pipeline
