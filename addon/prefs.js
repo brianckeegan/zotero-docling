@@ -3,6 +3,14 @@ pref("serverUrl", "http://localhost:5001");
 pref("autoConvert", false);
 pref("skipIfExists", true);
 
+// Optional authentication against a protected docling-serve instance.
+// "none" (default) sends no auth header. Stored in plain text in the user's
+// Zotero profile — see SECURITY.md for the threat model.
+pref("authScheme", "none"); // "none" | "bearer" | "basic" | "custom"
+pref("authUsername", ""); // basic auth username
+pref("authSecret", ""); // bearer token / basic password / custom header value
+pref("authHeaderName", ""); // custom scheme only
+
 // Tier 1: essentials → docling-serve form fields
 pref("pipeline", "standard"); // "standard" | "vlm"
 pref("doOcr", true); // do_ocr
@@ -51,3 +59,20 @@ pref("attachToItem", true);
 pref("exportFolderPath", "");
 // OS-level notification when a batch finishes, only if Zotero isn't focused.
 pref("notifyOnComplete", false);
+
+// Preferences-pane disclosure state. Collapsed by default so the first-run
+// experience focuses on the 80%-case Essentials. Reset to defaults restores.
+pref("prefsLayerConversionExpanded", false);
+pref("prefsLayerAdvancedExpanded", false);
+// Show a confirmation prompt before the destructive "Re-convert (replace)"
+// menu action. Users can opt out via a "Don't ask again" checkbox in the
+// dialog itself; Reset to defaults restores this.
+pref("confirmReconvert", true);
+// First-run onboarding nudge. Flipped to true after the first startup
+// toast fires OR after the first successful Test Connection. Reset to
+// defaults re-arms the nudge.
+pref("firstRunCompleted", false);
+// Last "Test Connection" result; surfaced when the prefs pane opens so a
+// returning user sees the previous state without re-clicking. JSON string:
+// {"ok": bool, "message": str, "at": ISO-8601 timestamp}. Empty when unset.
+pref("lastHealthResult", "");

@@ -31,6 +31,69 @@
         style="margin-left: 110px; font-style: italic; min-height: 1.4em"
       ></html:label>
     </hbox>
+
+    <!-- Authentication (optional) -->
+    <hbox align="center">
+      <html:label
+        data-l10n-id="pref-auth-scheme"
+        style="min-width: 110px"
+      ></html:label>
+      <menulist id="zotero-docling-auth-scheme" preference="authScheme">
+        <menupopup>
+          <menuitem value="none" data-l10n-id="pref-auth-scheme-none" />
+          <menuitem value="bearer" data-l10n-id="pref-auth-scheme-bearer" />
+          <menuitem value="basic" data-l10n-id="pref-auth-scheme-basic" />
+          <menuitem value="custom" data-l10n-id="pref-auth-scheme-custom" />
+        </menupopup>
+      </menulist>
+    </hbox>
+    <hbox align="center" id="zotero-docling-auth-username-row" hidden="true">
+      <html:label
+        for="zotero-docling-auth-username"
+        id="zotero-docling-auth-username-label"
+        data-l10n-id="pref-auth-username"
+        style="min-width: 110px"
+      ></html:label>
+      <html:input
+        type="text"
+        id="zotero-docling-auth-username"
+        preference="authUsername"
+        style="flex: 1"
+      ></html:input>
+    </hbox>
+    <hbox align="center" id="zotero-docling-auth-header-name-row" hidden="true">
+      <html:label
+        for="zotero-docling-auth-header-name"
+        data-l10n-id="pref-auth-header-name"
+        style="min-width: 110px"
+      ></html:label>
+      <html:input
+        type="text"
+        id="zotero-docling-auth-header-name"
+        preference="authHeaderName"
+        placeholder="X-API-Key"
+        style="flex: 1"
+      ></html:input>
+    </hbox>
+    <hbox align="center" id="zotero-docling-auth-secret-row" hidden="true">
+      <html:label
+        for="zotero-docling-auth-secret"
+        id="zotero-docling-auth-secret-label"
+        data-l10n-id="pref-auth-secret"
+        style="min-width: 110px"
+      ></html:label>
+      <html:input
+        type="password"
+        id="zotero-docling-auth-secret"
+        preference="authSecret"
+        style="flex: 1"
+      ></html:input>
+    </hbox>
+    <description
+      id="zotero-docling-auth-help"
+      data-l10n-id="pref-auth-help"
+      hidden="true"
+    ></description>
   </groupbox>
 
   <!-- ============================================================ -->
@@ -43,6 +106,7 @@
       preference="autoConvert"
       data-l10n-id="pref-auto-convert"
     />
+    <description data-l10n-id="pref-auto-convert-help"></description>
     <checkbox
       id="zotero-docling-skip-if-exists"
       preference="skipIfExists"
@@ -106,210 +170,339 @@
   </groupbox>
 
   <!-- ============================================================ -->
-  <!--  Conversion (Tier 1: essentials)                              -->
+  <!--  Conversion options (collapsible) — wraps Conversion, Enrichments, VLM
   <!-- ============================================================ -->
-  <groupbox>
-    <label><html:h2 data-l10n-id="pref-conversion-title"></html:h2></label>
+  <vbox>
+    <html:button
+      id="zotero-docling-disclosure-conversion"
+      type="button"
+      class="zd-disclosure"
+      data-l10n-id="pref-disclosure-conversion-collapsed"
+      style="
+        text-align: left;
+        padding: 0.4em 0.6em;
+        font-weight: 600;
+        cursor: pointer;
+      "
+    ></html:button>
+  </vbox>
+  <vbox id="zotero-docling-conversion-section" hidden="true">
+    <groupbox>
+      <label><html:h2 data-l10n-id="pref-conversion-title"></html:h2></label>
 
-    <!-- Pipeline -->
-    <hbox align="center">
-      <html:label
-        data-l10n-id="pref-pipeline"
-        style="min-width: 110px"
-      ></html:label>
-      <radiogroup
-        id="zotero-docling-pipeline-group"
-        orient="horizontal"
-        preference="pipeline"
-      >
-        <radio value="standard" data-l10n-id="pref-pipeline-standard" />
-        <radio value="vlm" data-l10n-id="pref-pipeline-vlm" />
-      </radiogroup>
-    </hbox>
+      <!-- Pipeline -->
+      <hbox align="center">
+        <html:label
+          data-l10n-id="pref-pipeline"
+          style="min-width: 110px"
+        ></html:label>
+        <radiogroup
+          id="zotero-docling-pipeline-group"
+          orient="horizontal"
+          preference="pipeline"
+        >
+          <radio value="standard" data-l10n-id="pref-pipeline-standard" />
+          <radio value="vlm" data-l10n-id="pref-pipeline-vlm" />
+        </radiogroup>
+      </hbox>
 
-    <!-- OCR -->
-    <checkbox preference="doOcr" data-l10n-id="pref-do-ocr" />
-    <checkbox preference="forceOcr" data-l10n-id="pref-force-ocr" />
+      <!-- OCR -->
+      <checkbox preference="doOcr" data-l10n-id="pref-do-ocr" />
+      <checkbox preference="forceOcr" data-l10n-id="pref-force-ocr" />
 
-    <!-- OCR language -->
-    <hbox align="center">
-      <html:label
-        for="zotero-docling-ocr-lang"
-        data-l10n-id="pref-ocr-lang"
-        style="min-width: 110px"
-      ></html:label>
-      <html:input
-        type="text"
-        id="zotero-docling-ocr-lang"
-        preference="ocrLang"
-        placeholder="e.g. en,fr,de"
-        style="flex: 1"
-      ></html:input>
-    </hbox>
+      <!-- OCR language -->
+      <hbox align="center">
+        <html:label
+          for="zotero-docling-ocr-lang"
+          data-l10n-id="pref-ocr-lang"
+          style="min-width: 110px"
+        ></html:label>
+        <html:input
+          type="text"
+          id="zotero-docling-ocr-lang"
+          preference="ocrLang"
+          placeholder="e.g. en,fr,de"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <description data-l10n-id="pref-ocr-lang-help"></description>
 
-    <!-- Table mode -->
-    <hbox align="center">
-      <html:label
-        data-l10n-id="pref-table-mode"
-        style="min-width: 110px"
-      ></html:label>
-      <menulist preference="tableMode">
-        <menupopup>
-          <menuitem value="accurate" label="accurate" />
-          <menuitem value="fast" label="fast" />
-        </menupopup>
-      </menulist>
-    </hbox>
-  </groupbox>
+      <!-- Table mode -->
+      <hbox align="center">
+        <html:label
+          data-l10n-id="pref-table-mode"
+          style="min-width: 110px"
+        ></html:label>
+        <menulist preference="tableMode">
+          <menupopup>
+            <menuitem value="accurate" label="accurate" />
+            <menuitem value="fast" label="fast" />
+          </menupopup>
+        </menulist>
+      </hbox>
+    </groupbox>
+
+    <!-- ============================================================ -->
+    <!--  Enrichments (Tier 2)                                         -->
+    <!-- ============================================================ -->
+    <groupbox>
+      <label><html:h2 data-l10n-id="pref-enrichments-title"></html:h2></label>
+      <description data-l10n-id="pref-enrichments-help"></description>
+      <checkbox
+        preference="doFormulaEnrichment"
+        data-l10n-id="pref-do-formula"
+      />
+      <checkbox preference="doCodeEnrichment" data-l10n-id="pref-do-code" />
+      <checkbox preference="doChartExtraction" data-l10n-id="pref-do-chart" />
+      <checkbox
+        preference="doPictureClassification"
+        data-l10n-id="pref-do-picture-class"
+      />
+    </groupbox>
+
+    <!-- ============================================================ -->
+    <!--  VLM (Tier 3) — only visible when pipeline=vlm                -->
+    <!-- ============================================================ -->
+    <groupbox id="zotero-docling-vlm-section" hidden="true">
+      <label><html:h2 data-l10n-id="pref-vlm-title"></html:h2></label>
+      <description data-l10n-id="pref-vlm-help"></description>
+
+      <hbox align="center">
+        <html:label
+          data-l10n-id="pref-vlm-preset"
+          style="min-width: 130px"
+        ></html:label>
+        <menulist id="zotero-docling-vlm-preset-menu" preference="vlmPreset">
+          <menupopup>
+            <menuitem
+              value="default"
+              label="default"
+              tooltiptext="docling-serve's built-in default — Granite-Docling (~500 MB). Recommended starting point."
+            />
+            <menuitem
+              value="smoldocling"
+              label="smoldocling"
+              tooltiptext="HuggingFaceTB/SmolDocling — smallest, fastest. ~256 MB. Good on low-RAM machines."
+            />
+            <menuitem
+              value="deepseek_ocr"
+              label="deepseek_ocr"
+              tooltiptext="DeepSeek-OCR — strong on dense academic text. ~3 GB."
+            />
+            <menuitem
+              value="granite_vision"
+              label="granite_vision"
+              tooltiptext="IBM Granite Vision — general-purpose, ~500 MB. Same family as the default."
+            />
+            <menuitem
+              value="pixtral"
+              label="pixtral"
+              tooltiptext="Mistral Pixtral — large, multi-GB. Strong figure understanding."
+            />
+            <menuitem
+              value="got_ocr"
+              label="got_ocr"
+              tooltiptext="GOT-OCR2 — general OCR, good on scanned material."
+            />
+            <menuitem
+              value="phi4"
+              label="phi4"
+              tooltiptext="Microsoft Phi-4 multimodal — mid-size, strong reasoning."
+            />
+            <menuitem
+              value="qwen"
+              label="qwen"
+              tooltiptext="Qwen2-VL — Alibaba, broad-domain VLM. Multi-GB."
+            />
+            <menuitem
+              value="nanonets_ocr2"
+              label="nanonets_ocr2"
+              tooltiptext="Nanonets-OCR-s — purpose-built for document OCR."
+            />
+            <menuitem
+              value="gemma_12b"
+              label="gemma_12b"
+              tooltiptext="Google Gemma 3 12B — very capable, ~24 GB RAM/GPU recommended."
+            />
+            <menuitem
+              value="gemma_27b"
+              label="gemma_27b"
+              tooltiptext="Google Gemma 3 27B — top quality, 40+ GB RAM/GPU needed."
+            />
+            <menuitem
+              value="dolphin"
+              label="dolphin"
+              tooltiptext="Dolphin — VLM tuned for academic/STEM figures."
+            />
+            <menuitem
+              value="glm_ocr"
+              label="glm_ocr"
+              tooltiptext="GLM-4V OCR — Zhipu AI, multi-GB."
+            />
+            <menuitem
+              value="lightonocr"
+              label="lightonocr"
+              tooltiptext="LightOnOCR — efficient OCR-focused VLM."
+            />
+            <menuitem
+              value="falcon_ocr"
+              label="falcon_ocr"
+              tooltiptext="Falcon OCR — TII multilingual OCR."
+            />
+            <menuitem
+              value="__custom__"
+              data-l10n-id="pref-preset-custom"
+              tooltiptext="Type any preset name your docling-serve build supports."
+            />
+          </menupopup>
+        </menulist>
+        <html:input
+          type="text"
+          id="zotero-docling-vlm-preset-custom"
+          preference="vlmPreset"
+          placeholder="custom preset name"
+          hidden="true"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <description
+        id="zotero-docling-vlm-preset-detail"
+        style="font-style: italic; opacity: 0.75"
+      ></description>
+
+      <checkbox
+        preference="doPictureDescription"
+        data-l10n-id="pref-do-picture-desc"
+      />
+
+      <hbox align="center">
+        <html:label
+          data-l10n-id="pref-pic-preset"
+          style="min-width: 130px"
+        ></html:label>
+        <menulist
+          id="zotero-docling-pic-preset-menu"
+          preference="pictureDescriptionPreset"
+        >
+          <menupopup>
+            <menuitem
+              value="default"
+              label="default"
+              tooltiptext="docling-serve's built-in default. Small, fast, sensible starting point."
+            />
+            <menuitem
+              value="smolvlm"
+              label="smolvlm"
+              tooltiptext="SmolVLM — smallest local picture-description model. ~500 MB."
+            />
+            <menuitem
+              value="granite_vision"
+              label="granite_vision"
+              tooltiptext="IBM Granite Vision — better descriptions, ~500 MB."
+            />
+            <menuitem
+              value="__custom__"
+              data-l10n-id="pref-preset-custom"
+              tooltiptext="Type any preset name your docling-serve build supports."
+            />
+          </menupopup>
+        </menulist>
+        <html:input
+          type="text"
+          id="zotero-docling-pic-preset-custom"
+          preference="pictureDescriptionPreset"
+          placeholder="custom preset name"
+          hidden="true"
+          style="flex: 1"
+        ></html:input>
+      </hbox>
+      <description
+        id="zotero-docling-pic-preset-detail"
+        style="font-style: italic; opacity: 0.75"
+      ></description>
+    </groupbox>
+  </vbox>
+  <!-- end of conversion-section -->
 
   <!-- ============================================================ -->
-  <!--  Enrichments (Tier 2)                                         -->
+  <!--  Advanced (collapsible) — wraps Async transport + Advanced JSON
   <!-- ============================================================ -->
-  <groupbox>
-    <label><html:h2 data-l10n-id="pref-enrichments-title"></html:h2></label>
-    <description data-l10n-id="pref-enrichments-help"></description>
-    <checkbox preference="doFormulaEnrichment" data-l10n-id="pref-do-formula" />
-    <checkbox preference="doCodeEnrichment" data-l10n-id="pref-do-code" />
-    <checkbox preference="doChartExtraction" data-l10n-id="pref-do-chart" />
-    <checkbox
-      preference="doPictureClassification"
-      data-l10n-id="pref-do-picture-class"
-    />
-  </groupbox>
+  <vbox>
+    <html:button
+      id="zotero-docling-disclosure-advanced"
+      type="button"
+      class="zd-disclosure"
+      data-l10n-id="pref-disclosure-advanced-collapsed"
+      style="
+        text-align: left;
+        padding: 0.4em 0.6em;
+        font-weight: 600;
+        cursor: pointer;
+      "
+    ></html:button>
+  </vbox>
+  <vbox id="zotero-docling-advanced-section" hidden="true">
+    <!-- ============================================================ -->
+    <!--  Async transport (Phase 4)                                    -->
+    <!-- ============================================================ -->
+    <groupbox>
+      <label><html:h2 data-l10n-id="pref-async-title"></html:h2></label>
+      <description data-l10n-id="pref-async-help"></description>
+      <checkbox
+        id="zotero-docling-use-async"
+        preference="useAsyncEndpoint"
+        data-l10n-id="pref-use-async"
+      />
+      <hbox align="center">
+        <html:label
+          for="zotero-docling-async-poll"
+          data-l10n-id="pref-async-poll"
+          style="min-width: 180px"
+        ></html:label>
+        <html:input
+          type="number"
+          id="zotero-docling-async-poll"
+          preference="asyncPollIntervalSec"
+          min="1"
+          step="1"
+          style="width: 6em"
+        ></html:input>
+      </hbox>
+      <hbox align="center">
+        <html:label
+          for="zotero-docling-async-max-wait"
+          data-l10n-id="pref-async-max-wait"
+          style="min-width: 180px"
+        ></html:label>
+        <html:input
+          type="number"
+          id="zotero-docling-async-max-wait"
+          preference="asyncMaxWaitMin"
+          min="0"
+          max="1440"
+          step="1"
+          style="width: 6em"
+        ></html:input>
+      </hbox>
+      <description data-l10n-id="pref-async-max-wait-help"></description>
+    </groupbox>
 
-  <!-- ============================================================ -->
-  <!--  VLM (Tier 3) — only visible when pipeline=vlm                -->
-  <!-- ============================================================ -->
-  <groupbox id="zotero-docling-vlm-section" hidden="true">
-    <label><html:h2 data-l10n-id="pref-vlm-title"></html:h2></label>
-    <description data-l10n-id="pref-vlm-help"></description>
-
-    <hbox align="center">
-      <html:label
-        data-l10n-id="pref-vlm-preset"
-        style="min-width: 130px"
-      ></html:label>
-      <menulist id="zotero-docling-vlm-preset-menu" preference="vlmPreset">
-        <menupopup>
-          <menuitem value="default" label="default" />
-          <menuitem value="smoldocling" label="smoldocling" />
-          <menuitem value="deepseek_ocr" label="deepseek_ocr" />
-          <menuitem value="granite_vision" label="granite_vision" />
-          <menuitem value="pixtral" label="pixtral" />
-          <menuitem value="got_ocr" label="got_ocr" />
-          <menuitem value="phi4" label="phi4" />
-          <menuitem value="qwen" label="qwen" />
-          <menuitem value="nanonets_ocr2" label="nanonets_ocr2" />
-          <menuitem value="gemma_12b" label="gemma_12b" />
-          <menuitem value="gemma_27b" label="gemma_27b" />
-          <menuitem value="dolphin" label="dolphin" />
-          <menuitem value="glm_ocr" label="glm_ocr" />
-          <menuitem value="lightonocr" label="lightonocr" />
-          <menuitem value="falcon_ocr" label="falcon_ocr" />
-          <menuitem value="__custom__" data-l10n-id="pref-preset-custom" />
-        </menupopup>
-      </menulist>
-      <html:input
-        type="text"
-        id="zotero-docling-vlm-preset-custom"
-        preference="vlmPreset"
-        placeholder="custom preset name"
-        hidden="true"
-        style="flex: 1"
-      ></html:input>
-    </hbox>
-
-    <checkbox
-      preference="doPictureDescription"
-      data-l10n-id="pref-do-picture-desc"
-    />
-
-    <hbox align="center">
-      <html:label
-        data-l10n-id="pref-pic-preset"
-        style="min-width: 130px"
-      ></html:label>
-      <menulist
-        id="zotero-docling-pic-preset-menu"
-        preference="pictureDescriptionPreset"
-      >
-        <menupopup>
-          <menuitem value="default" label="default" />
-          <menuitem value="smolvlm" label="smolvlm" />
-          <menuitem value="granite_vision" label="granite_vision" />
-          <menuitem value="__custom__" data-l10n-id="pref-preset-custom" />
-        </menupopup>
-      </menulist>
-      <html:input
-        type="text"
-        id="zotero-docling-pic-preset-custom"
-        preference="pictureDescriptionPreset"
-        placeholder="custom preset name"
-        hidden="true"
-        style="flex: 1"
-      ></html:input>
-    </hbox>
-  </groupbox>
-
-  <!-- ============================================================ -->
-  <!--  Async transport (Phase 4)                                    -->
-  <!-- ============================================================ -->
-  <groupbox>
-    <label><html:h2 data-l10n-id="pref-async-title"></html:h2></label>
-    <description data-l10n-id="pref-async-help"></description>
-    <checkbox
-      id="zotero-docling-use-async"
-      preference="useAsyncEndpoint"
-      data-l10n-id="pref-use-async"
-    />
-    <hbox align="center">
-      <html:label
-        for="zotero-docling-async-poll"
-        data-l10n-id="pref-async-poll"
-        style="min-width: 180px"
-      ></html:label>
-      <html:input
-        type="number"
-        id="zotero-docling-async-poll"
-        preference="asyncPollIntervalSec"
-        min="1"
-        step="1"
-        style="width: 6em"
-      ></html:input>
-    </hbox>
-    <hbox align="center">
-      <html:label
-        for="zotero-docling-async-max-wait"
-        data-l10n-id="pref-async-max-wait"
-        style="min-width: 180px"
-      ></html:label>
-      <html:input
-        type="number"
-        id="zotero-docling-async-max-wait"
-        preference="asyncMaxWaitMin"
-        min="1"
-        max="1440"
-        step="1"
-        style="width: 6em"
-      ></html:input>
-    </hbox>
-    <description data-l10n-id="pref-async-max-wait-help"></description>
-  </groupbox>
-
-  <!-- ============================================================ -->
-  <!--  Advanced (Tier 4)                                            -->
-  <!-- ============================================================ -->
-  <groupbox>
-    <label><html:h2 data-l10n-id="pref-advanced-title"></html:h2></label>
-    <description data-l10n-id="pref-advanced-help"></description>
-    <html:textarea
-      id="zotero-docling-advanced-json"
-      preference="advancedJson"
-      rows="6"
-      style="font-family: monospace; width: 100%"
-      placeholder='{ "images_scale": 3.0, "pdf_backend": "docling_parse", "page_range": [1, 5] }'
-    ></html:textarea>
-  </groupbox>
+    <!-- ============================================================ -->
+    <!--  Advanced (Tier 4)                                            -->
+    <!-- ============================================================ -->
+    <groupbox>
+      <label><html:h2 data-l10n-id="pref-advanced-title"></html:h2></label>
+      <description data-l10n-id="pref-advanced-help"></description>
+      <html:textarea
+        id="zotero-docling-advanced-json"
+        preference="advancedJson"
+        rows="6"
+        style="font-family: monospace; width: 100%"
+        placeholder='{ "images_scale": 3.0, "pdf_backend": "docling_parse", "page_range": [1, 5] }'
+      ></html:textarea>
+    </groupbox>
+  </vbox>
+  <!-- end of advanced-section -->
 
   <!-- Reset to defaults — clears every plugin pref including serverUrl -->
   <hbox align="center">
