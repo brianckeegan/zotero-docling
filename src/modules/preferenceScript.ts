@@ -18,6 +18,10 @@ const ALL_PREF_KEYS: ReadonlyArray<string> = [
   "serverUrl",
   "autoConvert",
   "skipIfExists",
+  "authScheme",
+  "authUsername",
+  "authSecret",
+  "authHeaderName",
   "pipeline",
   "doOcr",
   "forceOcr",
@@ -40,6 +44,9 @@ const ALL_PREF_KEYS: ReadonlyArray<string> = [
   "notifyOnComplete",
   "prefsLayerConversionExpanded",
   "prefsLayerAdvancedExpanded",
+  "confirmReconvert",
+  "firstRunCompleted",
+  "lastHealthResult",
 ];
 
 /**
@@ -88,6 +95,7 @@ export function registerPrefsScripts(win: Window): void {
   bindPipelineToggle(win);
   bindPresetCustomToggle(win, "vlm");
   bindPresetCustomToggle(win, "pic");
+  bindAuthSchemeToggle(win);
   bindPresetDetail(win, "vlm", VLM_PRESET_DETAIL, "vlmPreset");
   bindPresetDetail(win, "pic", PIC_PRESET_DETAIL, "pictureDescriptionPreset");
   bindDisclosure(
@@ -181,7 +189,81 @@ function bindPresetDetail(
   refresh();
 }
 
-/** "Test Connection" button → calls /health, paints status label. */
+/**
+ * Authentication scheme menu → show/hide the relevant credential rows.
+ *
+ *   none    → no credential rows
+ *   bearer  → secret row (labelled "Token")
+ *   basic   → username row + secret row (labelled "Password")
+ *   custom  → header-name row + secret row (labelled "Header value")
+ *
+ * Same labels for "secret" and "username" rows are reused across schemes
+ * and rewritten dynamically — saves declaring four separate input widgets
+ * bound to four prefs that all mean roughly the same thing.
+ */
+function bindAuthSchemeToggle(win: Window): void {
+  const menu = win.document.getElementById("zotero-docling-auth-scheme") as
+    | (HTMLElement & { value?: string })
+    | null;
+  const usernameRow = win.document.getElementById(
+    "zotero-docling-auth-username-row",
+  ) as HTMLElement | null;
+  const headerNameRow = win.document.getElementById(
+    "zotero-docling-auth-header-name-row",
+  ) as HTMLElement | null;
+  const secretRow = win.document.getElementById(
+    "zotero-docling-auth-secret-row",
+  ) as HTMLElement | null;
+  const secretLabel = win.document.getElementById(
+    "zotero-docling-auth-secret-label",
+  ) as HTMLElement | null;
+  const help = win.document.getElementById(
+    "zotero-docling-auth-help",
+  ) as HTMLElement | null;
+  if (!menu || !usernameRow || !headerNameRow || !secretRow) return;
+
+  const refresh = () => {
+    const scheme = ((menu.value as string) || "none").toLowerCase();
+    const showSecret = scheme !== "none";
+    usernameRow.hidden = scheme !== "basic";
+    headerNameRow.hidden = scheme !== "custom";
+    secretRow.hidden = !showSecret;
+    if (help) help.hidden = !showSecret;
+    // Relabel the secret input so the field name matches the chosen scheme.
+    if (secretLabel) {
+      let id = "pref-auth-secret";
+      if (scheme === "bearer") id = "pref-auth-token";
+      else if (scheme === "basic") id = "pref-auth-password";
+      else if (scheme === "custom") id = "pref-auth-header-value";
+      secretLabel.setAttribute("data-l10n-id", id);
+    }
+  };
+  menu.addEventListener("command", refresh);
+  refresh();
+}
+
+/**
+ * Render the saved health result into the status label without firing a
+ * new request. Used on prefs-pane open so a returning user sees the last
+ * known state instead of an empty line.
+ */
+function paintHealthLabel(
+  label: HTMLElement,
+  result: { ok: boolean; message?: string; serverUrl?: string; at?: string },
+): void {
+  const stamp = result.at
+    ? ` (last checked ${result.at.slice(0, 16).replace("T", " ")})`
+    : "";
+  if (result.ok) {
+    label.textContent = `Connected ✓  (${result.serverUrl ?? ""})${stamp}`;
+    label.style.color = "var(--accent-green, #2a8000)";
+  } else {
+    label.textContent = `Cannot connect — ${result.message ?? "unknown"}${stamp}`;
+    label.style.color = "var(--accent-red, #c00)";
+  }
+}
+
+/** "Test Connection" button → calls /health, paints status label + persists. */
 function bindTestConnection(win: Window): void {
   const btn = win.document.getElementById(
     "zotero-docling-test-connection",
@@ -193,21 +275,59 @@ function bindTestConnection(win: Window): void {
     Zotero.debug(`${LOG} prefs: test-connection elements not found`);
     return;
   }
-  btn.addEventListener("command", async () => {
+
+  const runCheck = async (): Promise<void> => {
     const serverUrl =
       ((getPref("serverUrl") as string) ?? "").trim() ||
       "http://localhost:5001";
     label.textContent = "Testing…";
     label.style.color = "";
     const result = await testServerConnection(serverUrl);
-    if (result.ok) {
-      label.textContent = `Connected ✓  (${result.serverUrl})`;
-      label.style.color = "var(--accent-green, #2a8000)";
-    } else {
-      label.textContent = `Cannot connect — ${result.message}`;
-      label.style.color = "var(--accent-red, #c00)";
+    const snapshot = {
+      ok: result.ok,
+      message: result.ok ? "" : result.message,
+      serverUrl: result.ok ? result.serverUrl : serverUrl,
+      at: new Date().toISOString(),
+    };
+    paintHealthLabel(label, snapshot);
+    try {
+      setPref("lastHealthResult", JSON.stringify(snapshot));
+    } catch {
+      /* persistence is nice-to-have */
     }
+    if (result.ok) {
+      // First successful connection completes the onboarding nudge so the
+      // startup toast doesn't keep firing.
+      try {
+        setPref("firstRunCompleted", true);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  btn.addEventListener("command", () => {
+    void runCheck();
   });
+
+  // Auto-run on first prefs-pane open in this session when there's no saved
+  // result; otherwise paint the saved one so the user has immediate signal.
+  const saved = ((getPref("lastHealthResult") as string) ?? "").trim();
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved) as {
+        ok: boolean;
+        message?: string;
+        serverUrl?: string;
+        at?: string;
+      };
+      paintHealthLabel(label, parsed);
+    } catch {
+      void runCheck();
+    }
+  } else {
+    void runCheck();
+  }
 }
 
 /** Pipeline radiogroup → show/hide the VLM section. */
