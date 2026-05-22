@@ -37,10 +37,17 @@ import { getPref, setPref } from "../utils/prefs";
 import { notifyOnBatchComplete } from "../utils/notification";
 import { ConcurrencyLimiter } from "../utils/concurrencyLimiter";
 import { truncateMiddle, formatDuration } from "../utils/format";
+import { onExportMarkdownZipClick } from "./markdownZipExport";
 
 const LOG = "[Docling/menu]";
 const MENU_CONVERT_ID = "zotero-docling-convert";
 const MENU_RECONVERT_ID = "zotero-docling-reconvert";
+const MENU_EXPORT_MD_ZIP_ID = "zotero-docling-export-md-zip";
+const TOOLS_EXPORT_MD_ZIP_ID = "zotero-docling-tools-export-md-zip";
+
+// Re-exports — used by other modules (markdownZipExport.ts) that need to
+// resolve a Zotero selection in the same way the right-click handlers do.
+export { resolvePdfsToConvert, getSelectedItems };
 
 function log(...args: unknown[]): void {
   try {
@@ -198,8 +205,12 @@ function confirmReconvertWithUser(count: number): boolean {
  * Run convertAttachment over a resolved PDF list with parallel concurrency,
  * per-item progress, and aggregated status tags + toast.
  * `force` bypasses the skipIfExists guard and pre-deletes existing .md.
+ *
+ * Exported so the markdown zip export "Convert first" path can drive the same
+ * orchestrator from outside menu.ts without duplicating the progress-window
+ * + batchInFlight + concurrency + tag logic.
  */
-async function runBatch(
+export async function runBatch(
   pdfs: Zotero.Item[],
   opts: { force: boolean; menuLabel: string },
 ): Promise<void> {
@@ -396,9 +407,16 @@ async function onReconvertClick(): Promise<void> {
 //  Registration
 // ---------------------------------------------------------------------------
 
+const ALL_MENU_IDS = [
+  MENU_CONVERT_ID,
+  MENU_RECONVERT_ID,
+  MENU_EXPORT_MD_ZIP_ID,
+  TOOLS_EXPORT_MD_ZIP_ID,
+];
+
 export function registerMenu(): void {
   // Hot-reload safety: kill previous registrations first.
-  for (const id of [MENU_CONVERT_ID, MENU_RECONVERT_ID]) {
+  for (const id of ALL_MENU_IDS) {
     try {
       ztoolkit.Menu.unregister(id);
     } catch {
@@ -429,11 +447,36 @@ export function registerMenu(): void {
     getVisibility: () => shouldShowReconvert(),
   });
 
-  log(`registerMenu: registered ${MENU_CONVERT_ID}, ${MENU_RECONVERT_ID}`);
+  // Item right-click: Export markdown to .zip. Shown whenever
+  // the selection resolves to ≥1 PDF — the export handler then handles
+  // the missing-md case via a confirm dialog.
+  ztoolkit.Menu.register("item", {
+    tag: "menuitem",
+    id: MENU_EXPORT_MD_ZIP_ID,
+    label: getString("menuitem-export-md-zip"),
+    commandListener: () => {
+      void onExportMarkdownZipClick("selection");
+    },
+    getVisibility: () => shouldShowConvert(),
+  });
+
+  // Tools → Docling: Export markdown to .zip (.zip). Same handler as the
+  // right-click but reachable without a selection — falls back to "current
+  // library" when nothing is selected.
+  ztoolkit.Menu.register("menuTools", {
+    tag: "menuitem",
+    id: TOOLS_EXPORT_MD_ZIP_ID,
+    label: getString("menuitem-tools-export-md-zip"),
+    commandListener: () => {
+      void onExportMarkdownZipClick("tools");
+    },
+  });
+
+  log(`registerMenu: registered ${ALL_MENU_IDS.join(", ")}`);
 }
 
 export function unregisterMenu(): void {
-  for (const id of [MENU_CONVERT_ID, MENU_RECONVERT_ID]) {
+  for (const id of ALL_MENU_IDS) {
     try {
       ztoolkit.Menu.unregister(id);
     } catch {
