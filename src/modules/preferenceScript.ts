@@ -4,7 +4,7 @@
 //   - Preset dropdowns "Custom…" entry → reveal a free-text input
 //   - "Reset to defaults" button → confirm + clear every plugin pref
 
-import { getPref } from "../utils/prefs";
+import { getPref, setPref } from "../utils/prefs";
 import { testServerConnection } from "./convert";
 
 const LOG = "[zotero-docling]";
@@ -38,6 +38,9 @@ const ALL_PREF_KEYS: ReadonlyArray<string> = [
   "attachToItem",
   "exportFolderPath",
   "notifyOnComplete",
+  "confirmReconvert",
+  "firstRunCompleted",
+  "lastHealthResult",
 ];
 
 export function registerPrefsScripts(win: Window): void {
@@ -53,7 +56,28 @@ export function registerPrefsScripts(win: Window): void {
   bindResetButton(win);
 }
 
-/** "Test Connection" button → calls /health, paints status label. */
+/**
+ * Render the saved health result into the status label without firing a
+ * new request. Used on prefs-pane open so a returning user sees the last
+ * known state instead of an empty line.
+ */
+function paintHealthLabel(
+  label: HTMLElement,
+  result: { ok: boolean; message?: string; serverUrl?: string; at?: string },
+): void {
+  const stamp = result.at
+    ? ` (last checked ${result.at.slice(0, 16).replace("T", " ")})`
+    : "";
+  if (result.ok) {
+    label.textContent = `Connected ✓  (${result.serverUrl ?? ""})${stamp}`;
+    label.style.color = "var(--accent-green, #2a8000)";
+  } else {
+    label.textContent = `Cannot connect — ${result.message ?? "unknown"}${stamp}`;
+    label.style.color = "var(--accent-red, #c00)";
+  }
+}
+
+/** "Test Connection" button → calls /health, paints status label + persists. */
 function bindTestConnection(win: Window): void {
   const btn = win.document.getElementById(
     "zotero-docling-test-connection",
@@ -65,21 +89,59 @@ function bindTestConnection(win: Window): void {
     Zotero.debug(`${LOG} prefs: test-connection elements not found`);
     return;
   }
-  btn.addEventListener("command", async () => {
+
+  const runCheck = async (): Promise<void> => {
     const serverUrl =
       ((getPref("serverUrl") as string) ?? "").trim() ||
       "http://localhost:5001";
     label.textContent = "Testing…";
     label.style.color = "";
     const result = await testServerConnection(serverUrl);
-    if (result.ok) {
-      label.textContent = `Connected ✓  (${result.serverUrl})`;
-      label.style.color = "var(--accent-green, #2a8000)";
-    } else {
-      label.textContent = `Cannot connect — ${result.message}`;
-      label.style.color = "var(--accent-red, #c00)";
+    const snapshot = {
+      ok: result.ok,
+      message: result.ok ? "" : result.message,
+      serverUrl: result.ok ? result.serverUrl : serverUrl,
+      at: new Date().toISOString(),
+    };
+    paintHealthLabel(label, snapshot);
+    try {
+      setPref("lastHealthResult", JSON.stringify(snapshot));
+    } catch {
+      /* persistence is nice-to-have */
     }
+    if (result.ok) {
+      // First successful connection completes the onboarding nudge so the
+      // startup toast doesn't keep firing.
+      try {
+        setPref("firstRunCompleted", true);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  btn.addEventListener("command", () => {
+    void runCheck();
   });
+
+  // Auto-run on first prefs-pane open in this session when there's no saved
+  // result; otherwise paint the saved one so the user has immediate signal.
+  const saved = ((getPref("lastHealthResult") as string) ?? "").trim();
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved) as {
+        ok: boolean;
+        message?: string;
+        serverUrl?: string;
+        at?: string;
+      };
+      paintHealthLabel(label, parsed);
+    } catch {
+      void runCheck();
+    }
+  } else {
+    void runCheck();
+  }
 }
 
 /** Pipeline radiogroup → show/hide the VLM section. */
