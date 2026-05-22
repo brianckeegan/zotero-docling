@@ -144,11 +144,13 @@ describe("format helpers #cold", function () {
       expect(formatDuration(3599)).to.equal("59m 59s");
     });
 
-    it("When the duration is at least one hour, then it is formatted as 'Hh Mm Ss' (seconds dropped when zero)", function () {
+    it("When the duration is at least one hour, then it is formatted as 'Hh Mm Ss' (seconds dropped when zero, minutes always retained)", function () {
       // Arrange & Act & Assert — the JSDoc example: 3725s → '1h 2m 5s'.
-      expect(formatDuration(3600)).to.equal("1h");
+      // At hour boundaries we still emit '1h 0m', not '1h' — the spec only
+      // drops seconds when they're zero, not minutes.
+      expect(formatDuration(3600)).to.equal("1h 0m");
       expect(formatDuration(3725)).to.equal("1h 2m 5s");
-      expect(formatDuration(7200)).to.equal("2h");
+      expect(formatDuration(7200)).to.equal("2h 0m");
     });
 
     // --------- Property-based tests (fast-check) ---------

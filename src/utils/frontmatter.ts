@@ -107,8 +107,9 @@ export function stripExistingFrontmatter(md: string): string {
   if (!md.startsWith("---\n") && !md.startsWith("---\r\n")) return md;
   const closeIdx = md.indexOf("\n---", 4);
   if (closeIdx === -1) return md;
-  // Skip the closing "---" and any single newline after it.
+  // Skip the closing "---" and a single trailing newline (CRLF or LF).
   let end = closeIdx + 4;
-  if (md[end] === "\n") end++;
+  if (md[end] === "\r" && md[end + 1] === "\n") end += 2;
+  else if (md[end] === "\n") end++;
   return md.slice(end);
 }
