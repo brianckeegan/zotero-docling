@@ -18,6 +18,7 @@ import {
 import { toast } from "./ui";
 import { ConcurrencyLimiter } from "../utils/concurrencyLimiter";
 import { notifyOnBatchComplete } from "../utils/notification";
+import { formatDuration } from "../utils/format";
 
 const LOG = "[Docling/notifier]";
 const DEBOUNCE_MS = 3000;
@@ -180,7 +181,13 @@ async function processPending(): Promise<void> {
 
     // Always toast — silent skips left users wondering why nothing happened
     // for standalone PDFs (no parent → skipped).
-    const summary = `OK ${ok} · skipped ${skipped} · failed ${failed}`;
+    const totalSec = batchResults.reduce((acc, { result }) => {
+      if (result.status !== "ok") return acc;
+      return acc + (result.processingTimeSec ?? 0);
+    }, 0);
+    const durationSuffix =
+      ok > 0 && totalSec > 0 ? ` — took ${formatDuration(totalSec)}` : "";
+    const summary = `OK ${ok} · skipped ${skipped} · failed ${failed}${durationSuffix}`;
     const detail =
       failMessages.length > 0
         ? failMessages.slice(0, 2).join("\n")

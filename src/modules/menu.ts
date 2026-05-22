@@ -36,7 +36,7 @@ import {
 import { getPref, setPref } from "../utils/prefs";
 import { notifyOnBatchComplete } from "../utils/notification";
 import { ConcurrencyLimiter } from "../utils/concurrencyLimiter";
-import { truncateMiddle } from "../utils/format";
+import { truncateMiddle, formatDuration } from "../utils/format";
 
 const LOG = "[Docling/menu]";
 const MENU_CONVERT_ID = "zotero-docling-convert";
@@ -340,7 +340,16 @@ async function runBatch(
   }
 
   const allOk = failed === 0;
-  const summary = `OK ${ok} · skipped ${skipped} · failed ${failed}`;
+  // Sum docling-serve's reported processing_time across OK items. With
+  // concurrency > 1 this is the SUM of work the server did, not the wall
+  // time the user waited — still the most honest number we have.
+  const totalSec = batchResults.reduce((acc, { result }) => {
+    if (result.status !== "ok") return acc;
+    return acc + (result.processingTimeSec ?? 0);
+  }, 0);
+  const durationSuffix =
+    ok > 0 && totalSec > 0 ? ` — took ${formatDuration(totalSec)}` : "";
+  const summary = `OK ${ok} · skipped ${skipped} · failed ${failed}${durationSuffix}`;
   const body =
     failureMessages.length > 0
       ? failureMessages.slice(0, 2).join("\n")
