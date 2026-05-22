@@ -2,8 +2,9 @@ import { initLocale, getString } from "./utils/locale";
 import { registerMenu, unregisterMenu } from "./modules/menu";
 import { registerNotifier, unregisterNotifier } from "./modules/notifier";
 import { registerPrefsScripts } from "./modules/preferenceScript";
-import { onZoteroBlur, onZoteroFocus } from "./modules/ui";
+import { onZoteroBlur, onZoteroFocus, toast } from "./modules/ui";
 import { createZToolkit } from "./utils/ztoolkit";
+import { getPref, setPref } from "./utils/prefs";
 
 async function onStartup(): Promise<void> {
   await Promise.all([
@@ -22,6 +23,39 @@ async function onStartup(): Promise<void> {
   );
 
   addon.data.initialized = true;
+  maybeShowFirstRunNudge();
+}
+
+/**
+ * Surface a one-time toast pointing the user at the preferences pane.
+ * Fires only on the first startup after install (gated on the
+ * `firstRunCompleted` pref). The flag is also flipped by a successful
+ * Test Connection in the prefs pane, so a user who finds prefs without
+ * the toast still won't see it next time.
+ *
+ * Deferred via setTimeout so the toast doesn't compete with Zotero's
+ * own startup UI noise.
+ */
+function maybeShowFirstRunNudge(): void {
+  try {
+    if ((getPref("firstRunCompleted") ?? false) as boolean) return;
+  } catch {
+    return;
+  }
+  setTimeout(() => {
+    try {
+      toast(
+        "zotero-docling installed",
+        "Open Tools → Settings → zotero-docling to verify your server connection.",
+        true,
+      );
+      setPref("firstRunCompleted", true);
+    } catch (e) {
+      Zotero.debug(
+        `[zotero-docling] first-run nudge failed (non-fatal): ${(e as Error).message}`,
+      );
+    }
+  }, 2500);
 }
 
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {

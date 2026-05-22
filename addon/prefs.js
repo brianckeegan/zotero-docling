@@ -46,3 +46,12 @@ pref("attachToItem", true);
 pref("exportFolderPath", "");
 // OS-level notification when a batch finishes, only if Zotero isn't focused.
 pref("notifyOnComplete", false);
+
+// First-run onboarding nudge. Flipped to true after the first startup
+// toast fires OR after the first successful Test Connection. Reset to
+// defaults re-arms the nudge.
+pref("firstRunCompleted", false);
+// Last "Test Connection" result; surfaced when the prefs pane opens so a
+// returning user sees the previous state without re-clicking. JSON string:
+// {"ok": bool, "message": str, "at": ISO-8601 timestamp}. Empty when unset.
+pref("lastHealthResult", "");
