@@ -35,6 +35,10 @@ literature reviews, and any downstream tool that prefers plain text over PDFs.
 - **Skip-if-exists**: re-running on a parent that already has the corresponding
   `.md` siblings skips them (matched by filename, so `paper.pdf` only skips if
   `paper.md` exists).
+- **Literature-lake export**: right-click a selection (or **Tools → Docling:
+  Export Literature Lake**) → save a single `.zip` of `{citationKey}.md`
+  files ready to drop into Obsidian, a RAG indexer, or any downstream
+  pipeline.
 
 ---
 
@@ -104,6 +108,26 @@ Then install the `.xpi` via **Tools → Plugins** as above.
 A reference of all docling-serve options exposed in the preferences pane (VLM
 presets, enrichments, etc.) is in the **Conversion / VLM / Enrichments / Advanced**
 sections of the prefs UI itself. Hover any field for inline help.
+
+### Exporting a Literature Lake
+
+Once a set of items has been converted, you can bundle the markdown into a
+single zip for downstream tools:
+
+1. Select one or more items (parents, PDF attachments, or any mix) in your
+   library. Or skip this step to operate on the current view.
+2. Either **right-click → Export to Literature Lake (.zip)**, or open
+   **Tools → Docling: Export Literature Lake (.zip)…**.
+3. If any selected item has no `.md` yet, a dialog offers three choices:
+   **Skip and export**, **Convert first**, or **Cancel**.
+4. Pick a save location in the file dialog (default name:
+   `literature-lake-YYYY-MM-DD.zip`).
+
+The zip is flat — each markdown file lives at the root, named
+`{citationKey}.md` (falling back to `{zoteroKey}.md` if Better BibTeX
+hasn't assigned a citation key). When a parent has multiple converted
+PDFs, the second and subsequent get `.1.md`, `.2.md`, … suffixes to
+prevent collisions.
 
 ---
 
