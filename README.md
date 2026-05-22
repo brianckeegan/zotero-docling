@@ -1,5 +1,9 @@
 # zotero-docling
 
+A Zotero 7+/9 plugin that converts PDF attachments to structured Markdown using
+the [Docling](https://github.com/docling-project/docling) document-understanding
+pipeline, and attaches the resulting `.md` file back to the same parent item.
+
 [![Release](https://img.shields.io/github/v/release/max3925vats/zotero-docling?style=flat-square)](https://github.com/max3925vats/zotero-docling/releases/latest)
 [![License](https://img.shields.io/github/license/max3925vats/zotero-docling?style=flat-square)](LICENSE)
 [![Downloads](https://img.shields.io/github/downloads/max3925vats/zotero-docling/total?style=flat-square)](https://github.com/max3925vats/zotero-docling/releases)
@@ -8,10 +12,6 @@
 [![Powered by Docling](https://img.shields.io/badge/Powered%20by-Docling-052FAD?style=flat-square)](https://github.com/docling-project/docling)
 
 ---
-
-A Zotero 7+/9 plugin that converts PDF attachments to structured Markdown using
-the [Docling](https://github.com/docling-project/docling) document-understanding
-pipeline, and attaches the resulting `.md` file back to the same parent item.
 
 Designed for **literature-lake** workflows: structured markdown becomes a clean
 upstream for note apps, RAG pipelines, citation extraction, summarisation,
@@ -35,8 +35,8 @@ literature reviews, and any downstream tool that prefers plain text over PDFs.
 - **Skip-if-exists**: re-running on a parent that already has the corresponding
   `.md` siblings skips them (matched by filename, so `paper.pdf` only skips if
   `paper.md` exists).
-- **Literature-lake export**: right-click a selection (or **Tools → Docling:
-  Export Literature Lake**) → save a single `.zip` of `{citationKey}.md`
+- **Literature-zip export**: right-click a selection (or **Tools → Docling:
+  Export markdown to .zip**) → save a single `.zip` of `{citationKey}.md`
   files ready to drop into Obsidian, a RAG indexer, or any downstream
   pipeline.
 
@@ -55,21 +55,63 @@ literature reviews, and any downstream tool that prefers plain text over PDFs.
 
 ## Install the server (docling-serve)
 
+Pick one of the three paths below — they all yield a `docling-serve` you can
+point the plugin at. Roughly:
+
+| Option        | Best for                                                        | Needs                |
+| ------------- | --------------------------------------------------------------- | -------------------- |
+| **uv**        | You already have a Python toolchain or want the smallest setup. | Python 3.10+, `uv`   |
+| **pipx**      | You already use pipx for isolated CLI tools.                    | Python 3.10+, `pipx` |
+| **Container** | You'd rather not touch Python at all, or want GPU isolation.    | Docker / Podman      |
+
+### Option A — uv (recommended)
+
 ```bash
-# Recommended: install as a uv tool so it lives in its own venv but is on PATH
-uv tool install "docling-serve[ui]"
+uv tool install "docling-serve[ui]"   # one-time install
+docling-serve run                      # leave this terminal open
+```
 
-# Start the server (leave this terminal open while using the plugin)
+### Option B — pipx
+
+```bash
+pipx install "docling-serve[ui]"      # one-time install
 docling-serve run
+```
 
-# Sanity check
+### Option C — container
+
+```bash
+# CPU-only (works on any host)
+docker run -p 5001:5001 \
+  -e DOCLING_SERVE_ENABLE_UI=true \
+  quay.io/docling-project/docling-serve:latest
+
+# CUDA variant for NVIDIA GPUs
+docker run --gpus all -p 5001:5001 \
+  -e DOCLING_SERVE_ENABLE_UI=true \
+  quay.io/docling-project/docling-serve-cu128:latest
+```
+
+### Sanity check (any option)
+
+```bash
 curl http://localhost:5001/health    # → {"status":"ok"}
 ```
 
-Optional: set `HF_TOKEN` so the first model download isn't rate-limited:
+### ⚠️ First conversion downloads model weights
+
+The first time you convert a PDF, `docling-serve` downloads the model files
+from Hugging Face. Expect **2–10 minutes** for the standard pipeline and
+**significantly longer** (multi-GB) for VLM presets. Subsequent conversions
+are fast. The Zotero progress window will appear to hang during the
+download — that's normal.
+
+**Recommended**: set an `HF_TOKEN` before starting the server so the
+download isn't rate-limited:
 
 ```bash
 export HF_TOKEN=hf_yourTokenHere     # get one at https://huggingface.co/settings/tokens
+docling-serve run
 ```
 
 ---
@@ -93,6 +135,11 @@ npm run build       # outputs .scaffold/build/*.xpi
 
 Then install the `.xpi` via **Tools → Plugins** as above.
 
+> **macOS note**: profile paths that contain spaces (for example
+> `~/Library/Application Support/Zotero/...`) must be written literally in
+> `.env` — **no** backslash escapes. See [`.env.example`](.env.example) for
+> the exact format.
+
 ---
 
 ## Usage
@@ -109,19 +156,19 @@ A reference of all docling-serve options exposed in the preferences pane (VLM
 presets, enrichments, etc.) is in the **Conversion / VLM / Enrichments / Advanced**
 sections of the prefs UI itself. Hover any field for inline help.
 
-### Exporting a Literature Lake
+### Exporting a markdown zip export
 
 Once a set of items has been converted, you can bundle the markdown into a
 single zip for downstream tools:
 
 1. Select one or more items (parents, PDF attachments, or any mix) in your
    library. Or skip this step to operate on the current view.
-2. Either **right-click → Export to Literature Lake (.zip)**, or open
-   **Tools → Docling: Export Literature Lake (.zip)…**.
+2. Either **right-click → Export markdown to .zip**, or open
+   **Tools → Docling: Export markdown to .zip…**.
 3. If any selected item has no `.md` yet, a dialog offers three choices:
    **Skip and export**, **Convert first**, or **Cancel**.
 4. Pick a save location in the file dialog (default name:
-   `literature-lake-YYYY-MM-DD.zip`).
+   `docling-markdown-YYYY-MM-DD.zip`).
 
 The zip is flat — each markdown file lives at the root, named
 `{citationKey}.md` (falling back to `{zoteroKey}.md` if Better BibTeX
@@ -133,10 +180,9 @@ prevent collisions.
 
 ## Known limitations
 
-### No cancel or async timeout for an in-flight conversion
+### No cancel for an in-flight conversion (upstream-blocked)
 
-The plugin does not expose a cancel button, and the async-transport poll
-loop has no client-side timeout. This is intentional — docling-serve
+The plugin does not expose a cancel button. This is intentional — docling-serve
 (the upstream server we talk to) currently has **no per-task cancel API**
 and **does not detect client disconnects** during processing, so any
 "give up" mechanism on the client side just orphans a server task that
@@ -159,6 +205,18 @@ Practical consequences:
   restart `docling-serve`.
 - Once the upstream cancel API exists, we'll add a cancel button that
   actually does what it says.
+
+### Client-side async maxWait (configurable)
+
+Separately from cancel, the async-transport poll loop **does** have an
+absolute client-side wait ceiling (`asyncMaxWaitMin`, default 240 minutes,
+configurable in **Settings → zotero-docling → Async transport**). When
+exceeded, the plugin stops polling and reports an error. This does not
+cancel the server-side task — it may still complete in the background —
+but it prevents the plugin from spinning forever when docling-serve has
+died mid-task. If poll requests start failing repeatedly, a one-time
+toast surfaces around the tenth consecutive failure so a dead server
+isn't silent.
 
 ---
 

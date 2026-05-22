@@ -1,10 +1,27 @@
 pref-server-title = docling-serve
 pref-server-url = Server URL
 pref-test-connection = Test Connection
+pref-auth-scheme = Auth
+pref-auth-scheme-none =
+    .label = None
+pref-auth-scheme-bearer =
+    .label = Bearer token
+pref-auth-scheme-basic =
+    .label = Basic auth
+pref-auth-scheme-custom =
+    .label = Custom header
+pref-auth-username = Username
+pref-auth-header-name = Header name
+pref-auth-secret = Secret
+pref-auth-token = Token
+pref-auth-password = Password
+pref-auth-header-value = Header value
+pref-auth-help = Sent on every request to docling-serve, including Test Connection. Stored unencrypted in your Zotero profile — use a least-privilege key, and prefer HTTPS for non-local servers.
 
 pref-behavior-title = Behavior
 pref-auto-convert =
     .label = Auto-convert new PDF attachments on import
+pref-auto-convert-help = Newly imported PDFs only — does not retroactively convert your existing library.
 pref-skip-if-exists =
     .label = Skip items that already have a Markdown attachment
 pref-max-concurrency = Parallel conversions
@@ -32,6 +49,7 @@ pref-do-ocr =
 pref-force-ocr =
     .label = Force OCR even when text is extractable (force_ocr)
 pref-ocr-lang = OCR languages
+pref-ocr-lang-help = Comma-separated language codes. The accepted format depends on the OCR backend docling-serve was built with — Tesseract wants ISO 639-2 three-letter codes (eng,fra,deu); EasyOCR wants two-letter codes (en,fr,de). Leave empty to let the server decide.
 pref-table-mode = Table mode
 
 pref-enrichments-title = Enrichments
@@ -58,9 +76,14 @@ pref-async-help = Submit the job to docling-serve's async endpoint and poll for 
 pref-use-async =
     .label = Use the async endpoint (/v1/convert/file/async)
 pref-async-poll = Poll interval (s)
+pref-async-max-wait = Max wait (min)
+pref-async-max-wait-help = Client-side ceiling for a single async task. When exceeded, the plugin stops polling and reports an error. docling-serve has no per-task cancel API, so the server-side task may still complete in the background.
 
 pref-advanced-title = Advanced
-pref-advanced-help = JSON object whose keys are sent as additional form fields to docling-serve. Overrides anything above. Leave empty to disable.
+pref-advanced-help = JSON object whose top-level keys are sent as form fields to docling-serve and override the controls above. Use this for any docling-serve option not exposed elsewhere in this pane. The full schema is documented in the docling-serve OpenAPI surface at /docs on your running server.
+
+pref-disclosure-conversion-collapsed = ▶ Conversion options
+pref-disclosure-advanced-collapsed = ▶ Advanced
 
 pref-reset = Reset to defaults
 pref-reset-help = Reverts every zotero-docling preference (including Server URL) to its built-in default.

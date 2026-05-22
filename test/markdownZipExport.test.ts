@@ -1,11 +1,11 @@
 import { assert } from "chai";
 import {
-  lakeBaseName,
-  lakeUniqueName,
+  zipBaseName,
+  zipUniqueName,
   todayIsoDate,
-} from "../src/modules/literatureLake";
+} from "../src/modules/markdownZipExport";
 
-// Minimal Zotero.Item-shaped factory for the lakeBaseName tests. Mirrors
+// Minimal Zotero.Item-shaped factory for the zipBaseName tests. Mirrors
 // the same shape `itemFactory` would emit but is duplicated here so this
 // test file doesn't depend on the test/_factories.ts module (which lands
 // in a separate PR).
@@ -20,15 +20,15 @@ function mockItem(
   } as unknown as Zotero.Item;
 }
 
-describe("literatureLake pure helpers", function () {
-  describe("lakeBaseName", function () {
+describe("markdownZipExport pure helpers", function () {
+  describe("zipBaseName", function () {
     it('returns "unknown" when parent is null', function () {
-      assert.strictEqual(lakeBaseName(null), "unknown");
+      assert.strictEqual(zipBaseName(null), "unknown");
     });
 
     it("uses citationKey field when present", function () {
       const item = mockItem({ citationKey: "smith2024paper" }, "ABCD1234");
-      assert.strictEqual(lakeBaseName(item), "smith2024paper");
+      assert.strictEqual(zipBaseName(item), "smith2024paper");
     });
 
     it("falls back to Citation Key line in extra field", function () {
@@ -36,52 +36,52 @@ describe("literatureLake pure helpers", function () {
         { extra: "Citation Key: smith2024paper\nMore: stuff" },
         "ABCD1234",
       );
-      assert.strictEqual(lakeBaseName(item), "smith2024paper");
+      assert.strictEqual(zipBaseName(item), "smith2024paper");
     });
 
     it("falls back to the Zotero key when nothing else is available", function () {
       const item = mockItem({}, "ABCD1234");
-      assert.strictEqual(lakeBaseName(item), "ABCD1234");
+      assert.strictEqual(zipBaseName(item), "ABCD1234");
     });
 
     it('returns "unknown" when key is empty and no citation info', function () {
       const item = mockItem({}, "");
-      assert.strictEqual(lakeBaseName(item), "unknown");
+      assert.strictEqual(zipBaseName(item), "unknown");
     });
 
     it("strips filesystem-hostile characters", function () {
       const item = mockItem({ citationKey: "a/b:c*d?e" }, "K");
-      assert.strictEqual(lakeBaseName(item), "a_b_c_d_e");
+      assert.strictEqual(zipBaseName(item), "a_b_c_d_e");
     });
   });
 
-  describe("lakeUniqueName", function () {
+  describe("zipUniqueName", function () {
     it("returns base.md for a fresh name", function () {
       const taken = new Set<string>();
-      assert.strictEqual(lakeUniqueName("paper", taken), "paper.md");
+      assert.strictEqual(zipUniqueName("paper", taken), "paper.md");
       assert.isTrue(taken.has("paper.md"));
     });
 
     it("disambiguates collisions with .1, .2, ...", function () {
       const taken = new Set<string>();
-      assert.strictEqual(lakeUniqueName("paper", taken), "paper.md");
-      assert.strictEqual(lakeUniqueName("paper", taken), "paper.1.md");
-      assert.strictEqual(lakeUniqueName("paper", taken), "paper.2.md");
+      assert.strictEqual(zipUniqueName("paper", taken), "paper.md");
+      assert.strictEqual(zipUniqueName("paper", taken), "paper.1.md");
+      assert.strictEqual(zipUniqueName("paper", taken), "paper.2.md");
     });
 
     it("disambiguation is per-base — different bases do not interfere", function () {
       const taken = new Set<string>();
-      lakeUniqueName("a", taken);
-      lakeUniqueName("a", taken);
-      assert.strictEqual(lakeUniqueName("b", taken), "b.md");
+      zipUniqueName("a", taken);
+      zipUniqueName("a", taken);
+      assert.strictEqual(zipUniqueName("b", taken), "b.md");
     });
 
     it("mutates the taken set so repeated calls remain stable", function () {
       const taken = new Set<string>();
       const names = [
-        lakeUniqueName("x", taken),
-        lakeUniqueName("x", taken),
-        lakeUniqueName("x", taken),
+        zipUniqueName("x", taken),
+        zipUniqueName("x", taken),
+        zipUniqueName("x", taken),
       ];
       assert.deepStrictEqual(names, ["x.md", "x.1.md", "x.2.md"]);
       assert.strictEqual(taken.size, 3);

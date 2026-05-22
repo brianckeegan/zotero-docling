@@ -1,12 +1,12 @@
 // Export selected items' converted markdown attachments to a single .zip file.
 //
-// Designed for "literature lake" workflows — structured markdown ingested by
-// note apps, RAG indexers, or scripts. The zip is flat: each markdown file
-// lives at the root, named after the parent's citation key (Better BibTeX)
-// or Zotero key. Multi-PDF parents disambiguate with `.1.md`, `.2.md` etc.
+// The zip is flat: each markdown file lives at the root, named after the
+// parent's citation key (Better BibTeX) or Zotero key. Multi-PDF parents
+// disambiguate with `.1.md`, `.2.md` etc.
 //
-// Two UI entry points: right-click on selected items, and Tools → Export
-// Docling literature lake. Both call onExportLiteratureLakeClick().
+// Two UI entry points: right-click on selected items, and the Tools menu
+// item "Docling: Export markdown to .zip…". Both call
+// onExportMarkdownZipClick().
 //
 // Missing-md handling: if any selected item lacks a converted .md, we
 // surface a three-button confirm — Skip and export / Convert first /
@@ -19,7 +19,7 @@ import { toast } from "./ui";
 import { runBatch, resolvePdfsToConvert, getSelectedItems } from "./menu";
 import { getLocalFilePath } from "../utils/zotero";
 
-const LOG = "[Docling/lake]";
+const LOG = "[Docling/zip]";
 
 function log(...args: unknown[]): void {
   try {
@@ -30,7 +30,7 @@ function log(...args: unknown[]): void {
 }
 
 // ---------------------------------------------------------------------------
-//  Pure helpers (tested in test/literatureLake.test.ts)
+//  Pure helpers (tested in test/markdownZipExport.test.ts)
 // ---------------------------------------------------------------------------
 
 /**
@@ -42,7 +42,7 @@ function log(...args: unknown[]): void {
  * "Citation Key:" line; then to the Zotero stable key; then to "unknown".
  * Filesystem-hostile characters are stripped.
  */
-export function lakeBaseName(parent: Zotero.Item | null): string {
+export function zipBaseName(parent: Zotero.Item | null): string {
   if (!parent) return "unknown";
   let citationKey = (
     (parent.getField?.("citationKey") as string | undefined) ?? ""
@@ -65,11 +65,11 @@ export function lakeBaseName(parent: Zotero.Item | null): string {
  * base name. The `taken` set is mutated to record the chosen name so
  * repeated calls within a single export remain stable.
  *
- *   lakeUniqueName("vaswani17", taken)           → "vaswani17.md"
- *   lakeUniqueName("vaswani17", taken)  // again → "vaswani17.1.md"
- *   lakeUniqueName("vaswani17", taken)  // again → "vaswani17.2.md"
+ *   zipUniqueName("vaswani17", taken)           → "vaswani17.md"
+ *   zipUniqueName("vaswani17", taken)  // again → "vaswani17.1.md"
+ *   zipUniqueName("vaswani17", taken)  // again → "vaswani17.2.md"
  */
-export function lakeUniqueName(base: string, taken: Set<string>): string {
+export function zipUniqueName(base: string, taken: Set<string>): string {
   const primary = `${base}.md`;
   if (!taken.has(primary)) {
     taken.add(primary);
@@ -103,7 +103,7 @@ export function todayIsoDate(now: Date = new Date()): string {
  * from, and (when present) the existing markdown child. `mdChild` is null
  * when no conversion has happened yet — handled by the missing-md dialog.
  */
-interface LakeRow {
+interface ZipRow {
   parent: Zotero.Item;
   pdf: Zotero.Item;
   mdChild: Zotero.Item | null;
@@ -115,8 +115,8 @@ interface LakeRow {
  * without one). The pdf.md filename matching is case-insensitive and
  * follows the same rule as `findMatchingMdChild`.
  */
-function planExport(pdfs: Zotero.Item[]): LakeRow[] {
-  const out: LakeRow[] = [];
+function planExport(pdfs: Zotero.Item[]): ZipRow[] {
+  const out: ZipRow[] = [];
   for (const pdf of pdfs) {
     const parentID = pdf.parentItemID;
     if (!parentID) continue;
@@ -175,7 +175,7 @@ function promptMissingMd(missing: number, total: number): MissingMdChoice {
     (Zotero as any).getActiveZoteroPane?.()?.document?.defaultView ??
     null;
 
-  const title = "Export Literature Lake";
+  const title = "Export markdown to .zip";
   const body = `${missing} of ${total} selected PDF${total === 1 ? "" : "s"} have no Docling markdown yet.\n\nHow would you like to proceed?`;
 
   let pressed: number;
@@ -217,7 +217,7 @@ async function promptSavePath(defaultName: string): Promise<string | null> {
     (Zotero as any).getMainWindow?.() ??
     (Zotero as any).getActiveZoteroPane?.()?.document?.defaultView ??
     null;
-  fp.init(win, "Save Literature Lake zip", Ci.nsIFilePicker.modeSave);
+  fp.init(win, "Save markdown .zip", Ci.nsIFilePicker.modeSave);
   fp.defaultString = defaultName;
   fp.appendFilter("Zip archive", "*.zip");
 
@@ -256,7 +256,7 @@ interface BuildResult {
   failedReads: number;
 }
 
-async function buildZip(rows: LakeRow[]): Promise<BuildResult> {
+async function buildZip(rows: ZipRow[]): Promise<BuildResult> {
   const zip = new JSZip();
   const taken = new Set<string>();
   let exported = 0;
@@ -284,8 +284,8 @@ async function buildZip(rows: LakeRow[]): Promise<BuildResult> {
       failedReads++;
       continue;
     }
-    const base = lakeBaseName(row.parent);
-    const entryName = lakeUniqueName(base, taken);
+    const base = zipBaseName(row.parent);
+    const entryName = zipUniqueName(base, taken);
     zip.file(entryName, bytes);
     exported++;
   }
@@ -306,7 +306,7 @@ async function buildZip(rows: LakeRow[]): Promise<BuildResult> {
  * Right-click and Tools-menu entry point. `source` is just for logging
  * — the logic is identical in both cases.
  */
-export async function onExportLiteratureLakeClick(
+export async function onExportMarkdownZipClick(
   source: "selection" | "tools",
 ): Promise<void> {
   log(`export click source=${source}`);
@@ -357,7 +357,7 @@ export async function onExportLiteratureLakeClick(
     // mdChild=null entries.
   }
 
-  const defaultName = `literature-lake-${todayIsoDate()}.zip`;
+  const defaultName = `docling-markdown-${todayIsoDate()}.zip`;
   const outPath = await promptSavePath(defaultName);
   if (!outPath) {
     log("user cancelled save dialog");

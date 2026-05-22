@@ -33,19 +33,19 @@ import {
   removeMatchingMdChild,
   findMatchingMdChild,
 } from "../utils/zotero";
-import { getPref } from "../utils/prefs";
+import { getPref, setPref } from "../utils/prefs";
 import { notifyOnBatchComplete } from "../utils/notification";
 import { ConcurrencyLimiter } from "../utils/concurrencyLimiter";
-import { truncateMiddle } from "../utils/format";
-import { onExportLiteratureLakeClick } from "./literatureLake";
+import { truncateMiddle, formatDuration } from "../utils/format";
+import { onExportMarkdownZipClick } from "./markdownZipExport";
 
 const LOG = "[Docling/menu]";
 const MENU_CONVERT_ID = "zotero-docling-convert";
 const MENU_RECONVERT_ID = "zotero-docling-reconvert";
-const MENU_EXPORT_LAKE_ID = "zotero-docling-export-lake";
-const TOOLS_EXPORT_LAKE_ID = "zotero-docling-tools-export-lake";
+const MENU_EXPORT_MD_ZIP_ID = "zotero-docling-export-md-zip";
+const TOOLS_EXPORT_MD_ZIP_ID = "zotero-docling-tools-export-md-zip";
 
-// Re-exports — used by other modules (literatureLake.ts) that need to
+// Re-exports — used by other modules (markdownZipExport.ts) that need to
 // resolve a Zotero selection in the same way the right-click handlers do.
 export { resolvePdfsToConvert, getSelectedItems };
 
@@ -124,11 +124,89 @@ function shouldShowReconvert(): boolean {
 // ---------------------------------------------------------------------------
 
 /**
+ * Show a "Re-convert with Docling?" confirm dialog with a "Don't ask again"
+ * checkbox. Returns true if the user confirmed. The destructive Re-convert
+ * action deletes the existing .md attachment(s); confirming guards against
+ * an accidental click that would cost minutes-to-hours of compute (or API
+ * spend, when paired with a remote LLM API).
+ *
+ * Uses Services.prompt.confirmEx — cross-platform, supports a checkbox
+ * natively. If the user ticks "Don't ask again" and confirms, we flip the
+ * `confirmReconvert` pref off; the Reset-to-defaults button restores it.
+ */
+function confirmReconvertWithUser(count: number): boolean {
+  const Services = (globalThis as any).Services;
+  const prompt = Services?.prompt;
+  if (!prompt?.confirmEx) {
+    // No prompt service available (very unusual). Default to allowing the
+    // action — losing the confirm is preferable to silently blocking the
+    // user from re-converting at all.
+    return true;
+  }
+
+  const Ci = (globalThis as any).Components?.interfaces;
+  const STD =
+    prompt.BUTTON_TITLE_IS_STRING ??
+    Ci?.nsIPromptService?.BUTTON_TITLE_IS_STRING ??
+    127;
+  const CANCEL =
+    prompt.BUTTON_TITLE_CANCEL ??
+    Ci?.nsIPromptService?.BUTTON_TITLE_CANCEL ??
+    2;
+  const POS0 = prompt.BUTTON_POS_0 ?? Ci?.nsIPromptService?.BUTTON_POS_0 ?? 0;
+  const POS1 = prompt.BUTTON_POS_1 ?? Ci?.nsIPromptService?.BUTTON_POS_1 ?? 8;
+  const flags = STD * POS0 + CANCEL * POS1;
+
+  const win =
+    (Zotero as any).getMainWindow?.() ??
+    (Zotero as any).getActiveZoteroPane?.()?.document?.defaultView ??
+    null;
+
+  const title = "Re-convert with Docling?";
+  const body = `This will delete the existing markdown attachment${count === 1 ? "" : "s"} on ${count} selected PDF${count === 1 ? "" : "s"} and run conversion again. Any manual edits to the existing markdown will be lost.`;
+  const checkLabel = "Don't ask again";
+  const check = { value: false };
+
+  let pressed: number;
+  try {
+    pressed = prompt.confirmEx(
+      win,
+      title,
+      body,
+      flags,
+      "Re-convert", // button 0 (left)
+      null, // button 1 — title comes from CANCEL flag
+      null, // button 2 — unused
+      checkLabel,
+      check,
+    );
+  } catch (e) {
+    Zotero.debug(
+      `${LOG} confirmReconvert prompt threw, allowing action: ${(e as Error).message}`,
+    );
+    return true;
+  }
+
+  // Button index 0 is "Re-convert"; 1 is Cancel.
+  if (pressed !== 0) return false;
+  if (check.value) {
+    try {
+      setPref("confirmReconvert", false);
+    } catch (e) {
+      Zotero.debug(
+        `${LOG} confirmReconvert: failed to persist opt-out: ${(e as Error).message}`,
+      );
+    }
+  }
+  return true;
+}
+
+/**
  * Run convertAttachment over a resolved PDF list with parallel concurrency,
  * per-item progress, and aggregated status tags + toast.
  * `force` bypasses the skipIfExists guard and pre-deletes existing .md.
  *
- * Exported so the Literature Lake "Convert first" path can drive the same
+ * Exported so the markdown zip export "Convert first" path can drive the same
  * orchestrator from outside menu.ts without duplicating the progress-window
  * + batchInFlight + concurrency + tag logic.
  */
@@ -159,9 +237,21 @@ export async function runBatch(
     return;
   }
 
+  // Re-convert is destructive — it deletes existing .md attachments before
+  // running a fresh conversion. Confirm with the user unless they've opted
+  // out via the "Don't ask again" checkbox. Confirm BEFORE setting any
+  // in-flight state so cancelling is a clean no-op.
+  if (opts.force && ((getPref("confirmReconvert") ?? true) as boolean)) {
+    if (!confirmReconvertWithUser(pdfs.length)) return;
+  }
+
   // Only one batch at a time. A second click while a batch is running
   // would otherwise spawn a parallel orchestrator that fights over the
   // shared managed-progress window.
+  //
+  // The flag MUST be set synchronously before the first `await` — otherwise
+  // two rapid clicks both pass the check, both await the preflight, and
+  // both proceed to spawn a batch.
   if (addon.data.batchInFlight) {
     toast(
       "Docling",
@@ -170,14 +260,14 @@ export async function runBatch(
     );
     return;
   }
+  addon.data.batchInFlight = true;
 
   // Pre-flight: avoid N×wall-of-error toasts when docling-serve isn't running.
   if (!(await preflightServer())) {
+    addon.data.batchInFlight = false;
     toast("Docling", "docling-serve isn't running — start it and retry", false);
     return;
   }
-
-  addon.data.batchInFlight = true;
 
   const limit = Math.max(
     1,
@@ -261,7 +351,16 @@ export async function runBatch(
   }
 
   const allOk = failed === 0;
-  const summary = `OK ${ok} · skipped ${skipped} · failed ${failed}`;
+  // Sum docling-serve's reported processing_time across OK items. With
+  // concurrency > 1 this is the SUM of work the server did, not the wall
+  // time the user waited — still the most honest number we have.
+  const totalSec = batchResults.reduce((acc, { result }) => {
+    if (result.status !== "ok") return acc;
+    return acc + (result.processingTimeSec ?? 0);
+  }, 0);
+  const durationSuffix =
+    ok > 0 && totalSec > 0 ? ` — took ${formatDuration(totalSec)}` : "";
+  const summary = `OK ${ok} · skipped ${skipped} · failed ${failed}${durationSuffix}`;
   const body =
     failureMessages.length > 0
       ? failureMessages.slice(0, 2).join("\n")
@@ -311,8 +410,8 @@ async function onReconvertClick(): Promise<void> {
 const ALL_MENU_IDS = [
   MENU_CONVERT_ID,
   MENU_RECONVERT_ID,
-  MENU_EXPORT_LAKE_ID,
-  TOOLS_EXPORT_LAKE_ID,
+  MENU_EXPORT_MD_ZIP_ID,
+  TOOLS_EXPORT_MD_ZIP_ID,
 ];
 
 export function registerMenu(): void {
@@ -348,28 +447,28 @@ export function registerMenu(): void {
     getVisibility: () => shouldShowReconvert(),
   });
 
-  // Item right-click: Export to Literature Lake (.zip). Shown whenever
+  // Item right-click: Export markdown to .zip. Shown whenever
   // the selection resolves to ≥1 PDF — the export handler then handles
   // the missing-md case via a confirm dialog.
   ztoolkit.Menu.register("item", {
     tag: "menuitem",
-    id: MENU_EXPORT_LAKE_ID,
-    label: getString("menuitem-export-lake"),
+    id: MENU_EXPORT_MD_ZIP_ID,
+    label: getString("menuitem-export-md-zip"),
     commandListener: () => {
-      void onExportLiteratureLakeClick("selection");
+      void onExportMarkdownZipClick("selection");
     },
     getVisibility: () => shouldShowConvert(),
   });
 
-  // Tools → Docling: Export Literature Lake (.zip). Same handler as the
+  // Tools → Docling: Export markdown to .zip (.zip). Same handler as the
   // right-click but reachable without a selection — falls back to "current
   // library" when nothing is selected.
   ztoolkit.Menu.register("menuTools", {
     tag: "menuitem",
-    id: TOOLS_EXPORT_LAKE_ID,
-    label: getString("menuitem-tools-export-lake"),
+    id: TOOLS_EXPORT_MD_ZIP_ID,
+    label: getString("menuitem-tools-export-md-zip"),
     commandListener: () => {
-      void onExportLiteratureLakeClick("tools");
+      void onExportMarkdownZipClick("tools");
     },
   });
 

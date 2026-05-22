@@ -1,5 +1,5 @@
 menuitem-convert = Convert with Docling
 menuitem-reconvert = Re-convert with Docling (replace)
-menuitem-export-lake = Export to Literature Lake (.zip)
-menuitem-tools-export-lake = Docling: Export Literature Lake (.zip)…
+menuitem-export-md-zip = Export markdown to .zip
+menuitem-tools-export-md-zip = Docling: Export markdown to .zip…
 pref-pane-label = zotero-docling
