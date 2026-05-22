@@ -151,6 +151,10 @@ async function runBatch(
   // Only one batch at a time. A second click while a batch is running
   // would otherwise spawn a parallel orchestrator that fights over the
   // shared managed-progress window.
+  //
+  // The flag MUST be set synchronously before the first `await` — otherwise
+  // two rapid clicks both pass the check, both await the preflight, and
+  // both proceed to spawn a batch.
   if (addon.data.batchInFlight) {
     toast(
       "Docling",
@@ -159,14 +163,14 @@ async function runBatch(
     );
     return;
   }
+  addon.data.batchInFlight = true;
 
   // Pre-flight: avoid N×wall-of-error toasts when docling-serve isn't running.
   if (!(await preflightServer())) {
+    addon.data.batchInFlight = false;
     toast("Docling", "docling-serve isn't running — start it and retry", false);
     return;
   }
-
-  addon.data.batchInFlight = true;
 
   const limit = Math.max(
     1,
