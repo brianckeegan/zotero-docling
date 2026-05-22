@@ -77,7 +77,25 @@ Keep them descriptive and imperative present-tense ("Fix skip on duplicate filen
 
 ### Tests
 
-There's a minimal `test/` directory from the scaffold. No deep test suite yet. Manual testing in a dev profile is the current bar — describe what you tested in the PR description.
+The `test/` directory uses Mocha (already wired by `zotero-plugin-scaffold`) with Chai (BDD `expect` style) and [`fast-check`](https://github.com/dubzzz/fast-check) for property-based tests.
+
+Run with `npm run test`.
+
+#### Conventions
+
+These follow [Yoni Goldberg's JavaScript testing best practices](https://github.com/goldbergyoni/javascript-testing-best-practices). Keep tests dead-simple and self-explanatory — they're a friendly assistant, not a second production system.
+
+- **3-part test names** (Goldberg #1.1): _what_ + _under what circumstances_ + _expected result_. Example: `"When the title contains double quotes, then they are escaped inside the YAML scalar"`. Avoid `"works"` / `"handles X"`.
+- **AAA structure** (Goldberg #1.2): each test body has `// Arrange`, `// Act`, `// Assert` comment markers, even for one-liners. Costs four characters; saves the reader a parse.
+- **BDD assertions** (Goldberg #1.3): use `expect(x).to.equal(y)`, `expect(x).to.include(y)`, etc. Avoid `assert.equal` and never write imperative loop-based assertions.
+- **Black-box only** (Goldberg #1.4): test exported behaviour, not internals. If you find yourself wanting to test a private function, either export it explicitly or test it through the public path.
+- **Factories over inline mocks** (Goldberg #1.9): test data factories live in `test/_factories.ts`. Pass only the fields the test cares about; the factory fills in the rest with realistic defaults. Avoid `"Foo"` / `42` placeholder data — use realistic input that mirrors what the function would see in production (Goldberg #1.6).
+- **Property-based tests for invariants** (Goldberg #1.7): when a function has a universal invariant (`result.length ≤ max`, `f(f(x)) === f(x)`, etc.), back the example cases with `fc.assert(fc.property(...))` from `fast-check`. Shrinking finds the minimum failing input for you.
+- **Expect errors, don't catch them** (Goldberg #1.10): use `expect(() => fn()).to.throw(/message/)` rather than try/catch.
+- **Two-level categorization** (Goldberg #1.12): nest tests under at least two `describe` blocks (unit-under-test → scenario or sub-function). One top-level `describe` per file is enforced by `eslint-plugin-mocha`.
+- **Tag fast tests** (Goldberg #1.11): append `#cold` to the top-level `describe` for tests that do no IO. Lets a future CI step grep for the fast subset.
+
+Manual testing in a dev profile is still expected for UI-affecting changes — describe what you tested in the PR description.
 
 ## Project layout
 
