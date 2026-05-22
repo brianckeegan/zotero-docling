@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import * as fc from "fast-check";
-import { truncateMiddle } from "../src/utils/format";
+import { truncateMiddle, formatDuration } from "../src/utils/format";
 
 // Style notes for this file (Goldberg testing best practices):
 //   #1.1 — 3-part test names (what / when / expected).
@@ -116,6 +116,50 @@ describe("format helpers #cold", function () {
             expect(result).to.include("…");
           },
         ),
+      );
+    });
+  });
+
+  describe("formatDuration", function () {
+    // --------- Example-based tests ---------
+
+    it("When the input is zero, undefined, NaN, or negative, then '0s' is returned", function () {
+      // Arrange & Act & Assert — `0s` is the documented fallback for invalid input.
+      expect(formatDuration(0)).to.equal("0s");
+      expect(formatDuration(undefined)).to.equal("0s");
+      expect(formatDuration(NaN)).to.equal("0s");
+      expect(formatDuration(-5)).to.equal("0s");
+    });
+
+    it("When the duration is under a minute, then it is formatted as 'Xs'", function () {
+      // Arrange & Act & Assert
+      expect(formatDuration(42)).to.equal("42s");
+      expect(formatDuration(59)).to.equal("59s");
+    });
+
+    it("When the duration is between one minute and one hour, then it is formatted as 'Mm Ss' (seconds dropped when zero)", function () {
+      // Arrange & Act & Assert
+      expect(formatDuration(60)).to.equal("1m");
+      expect(formatDuration(252)).to.equal("4m 12s");
+      expect(formatDuration(3599)).to.equal("59m 59s");
+    });
+
+    it("When the duration is at least one hour, then it is formatted as 'Hh Mm Ss' (seconds dropped when zero)", function () {
+      // Arrange & Act & Assert — the JSDoc example: 3725s → '1h 2m 5s'.
+      expect(formatDuration(3600)).to.equal("1h");
+      expect(formatDuration(3725)).to.equal("1h 2m 5s");
+      expect(formatDuration(7200)).to.equal("2h");
+    });
+
+    // --------- Property-based tests (fast-check) ---------
+
+    it("Property: For any non-negative finite input, the result is a non-empty string", function () {
+      fc.assert(
+        fc.property(fc.float({ min: 0, max: 100000, noNaN: true }), (n) => {
+          const out = formatDuration(n);
+          expect(out).to.be.a("string");
+          expect(out.length).to.be.greaterThan(0);
+        }),
       );
     });
   });

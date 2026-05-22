@@ -110,17 +110,28 @@ export function startManagedProgress(headline: string, body?: string): void {
 }
 
 /**
- * Update the in-flight managed progress headline. Body is optional and
- * appended if provided. Cheap if Zotero is blurred (only updates state).
+ * Update the in-flight managed progress headline. `appendBody`, if provided,
+ * appends a NEW description line to the progress window — it does NOT
+ * replace the previous body. Each call stacks another line. The underlying
+ * `Zotero.ProgressWindow.addDescription` has no replace primitive, so the
+ * additive semantics are surfaced in the parameter name. Cheap if Zotero is
+ * blurred (only updates state).
+ *
+ * If a future caller wants replace semantics (e.g., per-item live progress
+ * in the same line), the right move is to switch to
+ * `Zotero.ProgressWindow.ItemProgress` rather than overload this function.
  */
-export function updateManagedHeadline(headline: string, body?: string): void {
+export function updateManagedHeadline(
+  headline: string,
+  appendBody?: string,
+): void {
   if (!managed) return;
   managed.headline = headline;
-  if (body !== undefined) managed.body = body;
+  if (appendBody !== undefined) managed.body = appendBody;
   if (managed.pw) {
     try {
       managed.pw.changeHeadline(headline);
-      if (body) managed.pw.addDescription(body);
+      if (appendBody) managed.pw.addDescription(appendBody);
     } catch {
       /* progress window already closed */
     }

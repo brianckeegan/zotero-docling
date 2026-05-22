@@ -10,6 +10,10 @@ declare namespace _ZoteroTypes {
       "serverUrl": string;
       "autoConvert": boolean;
       "skipIfExists": boolean;
+      "authScheme": string;
+      "authUsername": string;
+      "authSecret": string;
+      "authHeaderName": string;
       "pipeline": string;
       "doOcr": boolean;
       "forceOcr": boolean;
@@ -30,6 +34,11 @@ declare namespace _ZoteroTypes {
       "attachToItem": boolean;
       "exportFolderPath": string;
       "notifyOnComplete": boolean;
+      "prefsLayerConversionExpanded": boolean;
+      "prefsLayerAdvancedExpanded": boolean;
+      "confirmReconvert": boolean;
+      "firstRunCompleted": boolean;
+      "lastHealthResult": string;
     };
   }
 }
