@@ -25,6 +25,7 @@ declare namespace _ZoteroTypes {
       "advancedJson": string;
       "useAsyncEndpoint": boolean;
       "asyncPollIntervalSec": number;
+      "asyncMaxWaitMin": number;
       "maxConcurrency": number;
       "addFrontmatter": boolean;
       "attachToItem": boolean;

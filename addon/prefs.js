@@ -29,6 +29,11 @@ pref("advancedJson", "");
 // for short conversions. Turn on for long VLM jobs that would otherwise 504.
 pref("useAsyncEndpoint", false);
 pref("asyncPollIntervalSec", 5); // poll cadence in seconds (min 1)
+// Absolute client-side wait ceiling for one async task, in minutes. Does NOT
+// cancel the server-side task (no upstream cancel API; see README). Bounded
+// [1, 1440]. Default 240 (4 hours) — enough for most VLM batches but short
+// enough that a dead server doesn't leave the plugin spinning all day.
+pref("asyncMaxWaitMin", 240);
 
 // Phase 5a: client-side polish
 // Concurrent conversions in a batch (1 = sequential, current behavior).

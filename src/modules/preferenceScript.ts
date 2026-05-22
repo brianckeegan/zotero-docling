@@ -33,6 +33,7 @@ const ALL_PREF_KEYS: ReadonlyArray<string> = [
   "advancedJson",
   "useAsyncEndpoint",
   "asyncPollIntervalSec",
+  "asyncMaxWaitMin",
   "maxConcurrency",
   "addFrontmatter",
   "attachToItem",

@@ -14,6 +14,7 @@ import {
 } from "../utils/zotero";
 import { buildFrontmatter } from "../utils/frontmatter";
 import { withDbLock } from "../utils/dbLock";
+import { toast } from "./ui";
 
 const LOG = "[zotero-docling]";
 
@@ -351,6 +352,14 @@ async function fetchConvertResultAsync(
     1,
     Number(getPref("asyncPollIntervalSec") ?? 5) || 5,
   );
+  // Absolute client-side wait ceiling. Does NOT cancel the server-side task
+  // (no upstream cancel API; see file header). Bounded [1, 1440] minutes; the
+  // pref UI also clamps these.
+  const maxWaitMin = Math.min(
+    1440,
+    Math.max(1, Number(getPref("asyncMaxWaitMin") ?? 240) || 240),
+  );
+  const maxWaitMs = maxWaitMin * 60_000;
 
   // 1. Submit
   let submitResp: Response;
@@ -375,18 +384,58 @@ async function fetchConvertResultAsync(
   }
   log(`async task submitted id=${taskId}`);
 
-  // 2. Poll until terminal. No client-side timeout — docling-serve has no
-  // per-task cancel API, so giving up here would just abandon a server task
-  // that keeps running invisibly. See README "Known limitations".
+  // 2. Poll until terminal or the client-side wait ceiling expires.
+  //
+  // Two safety nets, neither of which is a server-side cancel (still blocked
+  // upstream on docling-serve#447/#401, see README "Known limitations"):
+  //
+  //   (a) `asyncMaxWaitMin` is an absolute ceiling on how long we'll keep
+  //       polling for one task. When exceeded we return — the server-side
+  //       task may still be running, but we stop spinning client-side.
+  //   (b) `consecutiveFailures` escalates: a Zotero.debug warning at 3
+  //       failures, and a single toast at 10. Gives users a fast feedback
+  //       loop when docling-serve dies mid-task, instead of appearing hung.
+  const startedAt = Date.now();
+  let consecutiveFailures = 0;
+  let unresponsiveToastShown = false;
   while (true) {
     await sleep(pollSec * 1000);
+
+    if (Date.now() - startedAt > maxWaitMs) {
+      return {
+        ok: false,
+        message: `Async task exceeded maxWait (${maxWaitMin} min) — server-side task may still be running`,
+      };
+    }
 
     let pollResp: Response;
     try {
       pollResp = await api.fetch(`${serverUrl}/v1/status/poll/${taskId}`);
+      consecutiveFailures = 0;
     } catch (e) {
-      Zotero.debug(`${LOG} async poll failed: ${(e as Error).message}`);
-      // Transient network blip — keep polling until maxWait expires.
+      consecutiveFailures++;
+      Zotero.debug(
+        `${LOG} async poll failed (${consecutiveFailures} consecutive): ${(e as Error).message}`,
+      );
+      if (consecutiveFailures === 3) {
+        Zotero.debug(
+          `${LOG} async poll failing repeatedly — task=${taskId} (will surface a toast at 10)`,
+        );
+      }
+      if (consecutiveFailures >= 10 && !unresponsiveToastShown) {
+        unresponsiveToastShown = true;
+        try {
+          toast(
+            "Docling",
+            "docling-serve appears unresponsive — async task may have failed",
+            false,
+          );
+        } catch {
+          /* toast helpers may fail during shutdown — best-effort */
+        }
+      }
+      // Keep polling until the maxWait ceiling above; transient blips often
+      // recover within a few seconds.
       continue;
     }
     if (!pollResp.ok) {

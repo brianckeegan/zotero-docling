@@ -109,10 +109,9 @@ sections of the prefs UI itself. Hover any field for inline help.
 
 ## Known limitations
 
-### No cancel or async timeout for an in-flight conversion
+### No cancel for an in-flight conversion (upstream-blocked)
 
-The plugin does not expose a cancel button, and the async-transport poll
-loop has no client-side timeout. This is intentional — docling-serve
+The plugin does not expose a cancel button. This is intentional — docling-serve
 (the upstream server we talk to) currently has **no per-task cancel API**
 and **does not detect client disconnects** during processing, so any
 "give up" mechanism on the client side just orphans a server task that
@@ -135,6 +134,18 @@ Practical consequences:
   restart `docling-serve`.
 - Once the upstream cancel API exists, we'll add a cancel button that
   actually does what it says.
+
+### Client-side async maxWait (configurable)
+
+Separately from cancel, the async-transport poll loop **does** have an
+absolute client-side wait ceiling (`asyncMaxWaitMin`, default 240 minutes,
+configurable in **Settings → zotero-docling → Async transport**). When
+exceeded, the plugin stops polling and reports an error. This does not
+cancel the server-side task — it may still complete in the background —
+but it prevents the plugin from spinning forever when docling-serve has
+died mid-task. If poll requests start failing repeatedly, a one-time
+toast surfaces around the tenth consecutive failure so a dead server
+isn't silent.
 
 ---
 
