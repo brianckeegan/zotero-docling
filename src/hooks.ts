@@ -79,15 +79,6 @@ function onShutdown(): void {
   delete Zotero[addon.data.config.addonInstance];
 }
 
-async function onNotify(
-  _event: string,
-  _type: string,
-  _ids: Array<string | number>,
-  _extraData: { [key: string]: any },
-): Promise<void> {
-  // Phase 2: auto-convert notifier lands here.
-}
-
 async function onPrefsEvent(
   type: string,
   data: { [key: string]: any },
@@ -106,6 +97,5 @@ export default {
   onShutdown,
   onMainWindowLoad,
   onMainWindowUnload,
-  onNotify,
   onPrefsEvent,
 };
