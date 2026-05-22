@@ -38,6 +38,7 @@ const ALL_PREF_KEYS: ReadonlyArray<string> = [
   "attachToItem",
   "exportFolderPath",
   "notifyOnComplete",
+  "confirmReconvert",
 ];
 
 export function registerPrefsScripts(win: Window): void {
