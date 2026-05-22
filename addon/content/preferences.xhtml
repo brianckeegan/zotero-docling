@@ -252,6 +252,110 @@
   </groupbox>
 
   <!-- ============================================================ -->
+  <!--  Remote LLM API (picture description via OpenAI / Ollama / …) -->
+  <!-- ============================================================ -->
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-remote-api-title"></html:h2></label>
+    <description data-l10n-id="pref-remote-api-help"></description>
+
+    <checkbox
+      id="zotero-docling-use-remote-api"
+      preference="useRemoteApi"
+      data-l10n-id="pref-use-remote-api"
+    />
+
+    <hbox align="center">
+      <html:label
+        data-l10n-id="pref-remote-api-provider"
+        style="min-width: 110px"
+      ></html:label>
+      <menulist
+        id="zotero-docling-remote-api-provider"
+        preference="remoteApiProvider"
+      >
+        <menupopup>
+          <menuitem value="openai" label="OpenAI" />
+          <menuitem value="anthropic" label="Anthropic" />
+          <menuitem value="ollama" label="Ollama (local)" />
+          <menuitem value="lmstudio" label="LM Studio (local)" />
+          <menuitem value="openrouter" label="OpenRouter" />
+          <menuitem value="vllm" label="vLLM" />
+          <menuitem value="custom" label="Custom" />
+        </menupopup>
+      </menulist>
+    </hbox>
+
+    <hbox align="center">
+      <html:label
+        for="zotero-docling-remote-api-url"
+        data-l10n-id="pref-remote-api-url"
+        style="min-width: 110px"
+      ></html:label>
+      <html:input
+        type="text"
+        id="zotero-docling-remote-api-url"
+        preference="remoteApiUrl"
+        style="flex: 1"
+      ></html:input>
+    </hbox>
+
+    <hbox align="center">
+      <html:label
+        for="zotero-docling-remote-api-model"
+        data-l10n-id="pref-remote-api-model"
+        style="min-width: 110px"
+      ></html:label>
+      <html:input
+        type="text"
+        id="zotero-docling-remote-api-model"
+        preference="remoteApiModel"
+        style="flex: 1"
+      ></html:input>
+    </hbox>
+
+    <hbox align="center">
+      <html:label
+        for="zotero-docling-remote-api-key"
+        data-l10n-id="pref-remote-api-key"
+        style="min-width: 110px"
+      ></html:label>
+      <html:input
+        type="password"
+        id="zotero-docling-remote-api-key"
+        preference="remoteApiKey"
+        style="flex: 1"
+      ></html:input>
+    </hbox>
+
+    <hbox align="start">
+      <html:label
+        for="zotero-docling-remote-api-prompt"
+        data-l10n-id="pref-remote-api-prompt"
+        style="min-width: 110px; padding-top: 0.4em"
+      ></html:label>
+      <html:textarea
+        id="zotero-docling-remote-api-prompt"
+        preference="remoteApiPrompt"
+        rows="3"
+        style="flex: 1; font-family: inherit"
+      ></html:textarea>
+    </hbox>
+
+    <hbox align="center">
+      <button
+        id="zotero-docling-test-remote-api"
+        data-l10n-id="pref-remote-api-test"
+        style="margin-left: 110px"
+      ></button>
+      <html:label
+        id="zotero-docling-remote-api-test-result"
+        style="margin-left: 1em; font-style: italic; min-height: 1.4em"
+      ></html:label>
+    </hbox>
+    <description data-l10n-id="pref-remote-api-security-note"></description>
+  </groupbox>
+
+  <!-- ============================================================ -->
   <!--  Async transport (Phase 4)                                    -->
   <!-- ============================================================ -->
   <groupbox>

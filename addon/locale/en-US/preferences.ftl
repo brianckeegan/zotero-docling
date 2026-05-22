@@ -53,6 +53,18 @@ pref-do-picture-desc =
 pref-pic-preset = Picture-description preset
 pref-preset-custom = Custom…
 
+pref-remote-api-title = Remote LLM API (picture description)
+pref-remote-api-help = Use an external Vision-Language Model API (OpenAI / Claude / Ollama / LM Studio / OpenRouter / vLLM) to describe figures in PDFs, instead of a local picture-description preset. Requires docling-serve to be started with DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true. When this is enabled, "Describe pictures with a VLM" is forced on.
+pref-use-remote-api =
+    .label = Use a remote LLM API for picture descriptions
+pref-remote-api-provider = Provider
+pref-remote-api-url = API URL
+pref-remote-api-model = Model
+pref-remote-api-key = API key
+pref-remote-api-prompt = Prompt
+pref-remote-api-test = Test Remote API
+pref-remote-api-security-note = API key is stored unencrypted in your Zotero profile. Use a key with usage caps when possible. See SECURITY.md for the full threat model.
+
 pref-async-title = Async transport
 pref-async-help = Submit the job to docling-serve's async endpoint and poll for results. Recommended for long VLM conversions that would otherwise time out an upstream proxy. The sync endpoint is faster for short PDFs.
 pref-use-async =

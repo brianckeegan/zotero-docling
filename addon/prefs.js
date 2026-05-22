@@ -46,3 +46,23 @@ pref("attachToItem", true);
 pref("exportFolderPath", "");
 // OS-level notification when a batch finishes, only if Zotero isn't focused.
 pref("notifyOnComplete", false);
+
+// Phase: Remote LLM API for picture description.
+//
+// When enabled, the plugin sends a `picture_description_api` JSON form field
+// to docling-serve instead of using the local `picture_description_preset`.
+// docling-serve must be started with DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true
+// to honour this field — surfaced in the prefs pane help and README.
+//
+// API key is stored in plain text in the user's Zotero profile (see SECURITY.md).
+pref("useRemoteApi", false);
+// Provider preset — controls the default URL, model placeholder, and header
+// shape. "custom" leaves the fields free.
+pref("remoteApiProvider", "openai");
+pref("remoteApiUrl", "https://api.openai.com/v1/chat/completions");
+pref("remoteApiModel", "gpt-4o-mini");
+pref("remoteApiKey", "");
+pref(
+  "remoteApiPrompt",
+  "Describe this figure for an academic reader. Include axis labels, units, and any quantitative claims the figure is making.",
+);

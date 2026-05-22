@@ -107,6 +107,53 @@ sections of the prefs UI itself. Hover any field for inline help.
 
 ---
 
+## Using a remote LLM for picture descriptions
+
+Instead of running a local picture-description model (`smolvlm`, `granite_vision`,
+…), you can point the plugin at an external Vision-Language Model API: Claude,
+GPT-4o, Llama 3.2 Vision via Ollama, anything on OpenRouter, a local LM Studio
+or vLLM server. Useful when you already have API credentials, want to skip
+gigabytes of local model downloads, or want to mix-and-match models per
+provider.
+
+### Server-side requirement
+
+`docling-serve` ignores the relevant form field by default. Start it with the
+remote-services opt-in:
+
+```bash
+DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true docling-serve run
+```
+
+For the container image, pass `-e DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true`.
+
+### Plugin configuration
+
+In **Settings → zotero-docling → Remote LLM API**:
+
+1. Tick **Use a remote LLM API for picture descriptions**.
+2. Pick a **Provider** — the URL and model fields prefill with sensible
+   defaults you can edit.
+3. Fill in your **API key** (left blank for Ollama / LM Studio / local vLLM).
+4. Optionally tweak the **Prompt**.
+5. Click **Test Remote API** to confirm the URL parses and the provider is
+   reachable.
+
+Picture description is forced on while this checkbox is ticked — the option
+only makes sense when there are figures to describe.
+
+### Provider notes
+
+- **OpenAI / OpenRouter / Ollama / LM Studio / vLLM**: all OpenAI-wire-compatible.
+- **Anthropic**: native API is not OpenAI-compatible at the wire level — the
+  preset shapes the request but you'll need an intermediary proxy (e.g.
+  `claude-relay`, LiteLLM) that translates `/v1/messages` to `/v1/chat/completions`.
+- **API key storage**: keys are stored in plain text in your Zotero profile.
+  Use a least-privilege key with usage caps. See [SECURITY.md](SECURITY.md) for
+  the full threat model.
+
+---
+
 ## Known limitations
 
 ### No cancel or async timeout for an in-flight conversion

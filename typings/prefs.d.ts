@@ -30,6 +30,12 @@ declare namespace _ZoteroTypes {
       "attachToItem": boolean;
       "exportFolderPath": string;
       "notifyOnComplete": boolean;
+      "useRemoteApi": boolean;
+      "remoteApiProvider": string;
+      "remoteApiUrl": string;
+      "remoteApiModel": string;
+      "remoteApiKey": string;
+      "remoteApiPrompt": string;
     };
   }
 }

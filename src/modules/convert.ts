@@ -98,6 +98,58 @@ interface ConvertResponse {
 }
 
 /**
+ * Build the `picture_description_api` config object sent to docling-serve
+ * when the user has opted into a remote LLM for picture descriptions.
+ * Returns null when the configured fields are incomplete — the caller
+ * skips appending the form field in that case, so the conversion still
+ * runs (just without descriptions).
+ *
+ * Wire shape (sent JSON-stringified as a single multipart form field):
+ *   { url, headers, params: { model }, prompt, timeout }
+ *
+ * Anthropic's API is not OpenAI-wire-compatible; this function still
+ * shapes the request body, on the assumption that docling-serve or a
+ * proxy in front of it handles the translation. Surfaced in the prefs
+ * pane help text.
+ */
+export function buildPictureDescriptionApiConfig(): Record<
+  string,
+  unknown
+> | null {
+  const url = ((getPref("remoteApiUrl") as string) ?? "").trim();
+  if (!url) return null;
+  const model = ((getPref("remoteApiModel") as string) ?? "").trim();
+  const key = ((getPref("remoteApiKey") as string) ?? "").trim();
+  const prompt = ((getPref("remoteApiPrompt") as string) ?? "").trim();
+  const provider = ((getPref("remoteApiProvider") as string) ?? "custom")
+    .trim()
+    .toLowerCase();
+
+  // Provider determines the auth header shape. OpenAI-compatible providers
+  // (openai, ollama, lmstudio, openrouter, vllm) use Bearer. Anthropic uses
+  // x-api-key + the version pin. "custom" is permissive and skips auth if
+  // the user didn't supply a key.
+  const headers: Record<string, string> = {};
+  if (key) {
+    if (provider === "anthropic") {
+      headers["x-api-key"] = key;
+      headers["anthropic-version"] = "2023-06-01";
+    } else {
+      headers["Authorization"] = `Bearer ${key}`;
+    }
+  }
+
+  const config: Record<string, unknown> = { url };
+  if (Object.keys(headers).length > 0) config.headers = headers;
+  if (model) config.params = { model };
+  if (prompt) config.prompt = prompt;
+  // 300 s is what the docling-serve example payloads use; users with very
+  // slow models can override via Advanced JSON.
+  config.timeout = "300";
+  return config;
+}
+
+/**
  * Build the multipart body for POST /v1/convert/file by reading all relevant
  * prefs and turning them into flat form fields. The `advancedJson` pref is
  * merged last, so it overrides anything else.
@@ -146,12 +198,26 @@ function buildConvertForm(
   const vlmPreset = (getPref("vlmPreset") ?? "default") as string;
   if (vlmPreset) form.append("vlm_pipeline_preset", vlmPreset);
 
-  const doPicDesc = (getPref("doPictureDescription") ?? false) as boolean;
+  // Picture description: either a local preset OR a remote API. The remote
+  // API path requires docling-serve to be started with
+  // DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true (surfaced in the prefs help).
+  const useRemoteApi = (getPref("useRemoteApi") ?? false) as boolean;
+  const doPicDescPref = (getPref("doPictureDescription") ?? false) as boolean;
+  // Enabling the remote API only makes sense if picture description is on;
+  // force it on so users don't have to flip two prefs to get descriptions.
+  const doPicDesc = useRemoteApi ? true : doPicDescPref;
   form.append("do_picture_description", String(doPicDesc));
   if (doPicDesc) {
-    const picPreset = (getPref("pictureDescriptionPreset") ??
-      "default") as string;
-    if (picPreset) form.append("picture_description_preset", picPreset);
+    if (useRemoteApi) {
+      const apiConfig = buildPictureDescriptionApiConfig();
+      if (apiConfig) {
+        form.append("picture_description_api", JSON.stringify(apiConfig));
+      }
+    } else {
+      const picPreset = (getPref("pictureDescriptionPreset") ??
+        "default") as string;
+      if (picPreset) form.append("picture_description_preset", picPreset);
+    }
   }
 
   // ocr_lang is a repeated field — server reads it as a list
