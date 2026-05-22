@@ -55,6 +55,10 @@ pref("exportFolderPath", "");
 // OS-level notification when a batch finishes, only if Zotero isn't focused.
 pref("notifyOnComplete", false);
 
+// Preferences-pane disclosure state. Collapsed by default so the first-run
+// experience focuses on the 80%-case Essentials. Reset to defaults restores.
+pref("prefsLayerConversionExpanded", false);
+pref("prefsLayerAdvancedExpanded", false);
 // Show a confirmation prompt before the destructive "Re-convert (replace)"
 // menu action. Users can opt out via a "Don't ask again" checkbox in the
 // dialog itself; Reset to defaults restores this.
