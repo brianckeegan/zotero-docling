@@ -13,9 +13,9 @@ pipeline, and attaches the resulting `.md` file back to the same parent item.
 
 ---
 
-Designed for **literature-lake** workflows: structured markdown becomes a clean
-upstream for note apps, RAG pipelines, citation extraction, summarisation,
-literature reviews, and any downstream tool that prefers plain text over PDFs.
+Structured markdown makes a clean upstream for note apps, RAG pipelines,
+citation extraction, summarisation, literature reviews, and any downstream
+tool that prefers plain text over PDFs.
 
 ---
 
@@ -24,8 +24,13 @@ literature reviews, and any downstream tool that prefers plain text over PDFs.
 - **One-click conversion**: right-click any PDF attachment (or any parent item
   containing PDFs, or any mix of the two) → "Convert with Docling" → Markdown
   appears as a sibling attachment.
+- **Re-convert (replace)**: right-click → "Re-convert with Docling (replace)"
+  deletes the existing `.md` sibling and runs conversion again. A confirmation
+  dialog guards the destructive action (toggleable in prefs).
 - **Auto-convert on import** (opt-in): newly imported PDFs are converted
   automatically with a 3-second debounce that handles bulk imports gracefully.
+- **Optional authentication**: Bearer token / Basic auth / Custom header
+  schemes for protected `docling-serve` instances. Default is no auth.
 - **Full Docling options surfaced**: pipeline (standard / VLM), OCR + language,
   table mode, formula / code / chart / picture enrichments, VLM presets, plus
   an Advanced JSON escape hatch for anything not in the UI.
@@ -35,7 +40,7 @@ literature reviews, and any downstream tool that prefers plain text over PDFs.
 - **Skip-if-exists**: re-running on a parent that already has the corresponding
   `.md` siblings skips them (matched by filename, so `paper.pdf` only skips if
   `paper.md` exists).
-- **Literature-zip export**: right-click a selection (or **Tools → Docling:
+- **Markdown `.zip` export**: right-click a selection (or **Tools → Docling:
   Export markdown to .zip**) → save a single `.zip` of `{citationKey}.md`
   files ready to drop into Obsidian, a RAG indexer, or any downstream
   pipeline.
@@ -152,11 +157,13 @@ Then install the `.xpi` via **Tools → Plugins** as above.
 4. (Optional) tick **Auto-convert new PDF attachments** in Behavior to run
    conversion automatically as you import new PDFs.
 
-A reference of all docling-serve options exposed in the preferences pane (VLM
-presets, enrichments, etc.) is in the **Conversion / VLM / Enrichments / Advanced**
-sections of the prefs UI itself. Hover any field for inline help.
+All docling-serve options exposed in the preferences pane (pipeline, OCR,
+VLM presets, enrichments, etc.) live inside two collapsible disclosure
+sections — **Conversion options** and **Advanced** — collapsed by default so
+the first-run experience stays focused on Server, Behavior, and Output.
+Click either header to expand. Hover any field for inline help.
 
-### Exporting a markdown zip export
+### Exporting markdown to a .zip
 
 Once a set of items has been converted, you can bundle the markdown into a
 single zip for downstream tools:
@@ -206,17 +213,21 @@ Practical consequences:
 - Once the upstream cancel API exists, we'll add a cancel button that
   actually does what it says.
 
-### Client-side async maxWait (configurable)
+### Client-side async wait ceiling (opt-in)
 
-Separately from cancel, the async-transport poll loop **does** have an
-absolute client-side wait ceiling (`asyncMaxWaitMin`, default 240 minutes,
-configurable in **Settings → zotero-docling → Async transport**). When
-exceeded, the plugin stops polling and reports an error. This does not
-cancel the server-side task — it may still complete in the background —
-but it prevents the plugin from spinning forever when docling-serve has
-died mid-task. If poll requests start failing repeatedly, a one-time
-toast surfaces around the tenth consecutive failure so a dead server
-isn't silent.
+The async-transport poll loop runs **without** a client-side time limit by
+default — same honesty argument as cancel: docling-serve has no per-task
+cancel API, so abandoning a poll just orphans the server task. If you
+want a hard ceiling anyway, set **Max wait** to a positive minute value
+in **Settings → zotero-docling → Advanced → Async transport** (the
+**Advanced** section is collapsed by default; click to expand). When
+exceeded, the plugin stops polling and reports an error; the server-side
+task may still complete in the background.
+
+Separately, if poll requests start failing repeatedly (server crashed
+mid-task, network blip, etc.), a one-time toast surfaces around the
+tenth consecutive failure so a dead server isn't silent. This behavior
+is always on and doesn't depend on the Max wait setting.
 
 ---
 
