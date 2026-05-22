@@ -17,6 +17,7 @@ import {
   stripExistingFrontmatter,
 } from "../utils/frontmatter";
 import { withDbLock } from "../utils/dbLock";
+import { enrichServerError } from "../utils/serverErrorHints";
 import { toast } from "./ui";
 
 const LOG = "[zotero-docling]";
@@ -369,7 +370,8 @@ async function parseConvertResponse(r: Response): Promise<FetchOutcome> {
   if (!r.ok) {
     const errs = formatServerErrors(data);
     const hasDetail = errs && !errs.startsWith("status=");
-    return { ok: false, message: hasDetail ? `${label}: ${errs}` : label };
+    const raw = hasDetail ? `${label}: ${errs}` : label;
+    return { ok: false, message: enrichServerError(raw) };
   }
   return { ok: true, data };
 }
@@ -653,9 +655,10 @@ async function convertAttachmentInner(
   const okStatus =
     data.status === "success" || data.status === "partial_success";
   if (!okStatus) {
+    const raw = `Conversion ${data.status ?? "unknown"}: ${formatServerErrors(data)}`;
     return {
       status: "error",
-      message: `Conversion ${data.status ?? "unknown"}: ${formatServerErrors(data)}`,
+      message: enrichServerError(raw),
     };
   }
   const rawMarkdown = data.document?.md_content;
