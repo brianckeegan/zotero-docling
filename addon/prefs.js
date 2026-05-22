@@ -46,3 +46,8 @@ pref("attachToItem", true);
 pref("exportFolderPath", "");
 // OS-level notification when a batch finishes, only if Zotero isn't focused.
 pref("notifyOnComplete", false);
+
+// Preferences-pane disclosure state. Collapsed by default so the first-run
+// experience focuses on the 80%-case Essentials. Reset to defaults restores.
+pref("prefsLayerConversionExpanded", false);
+pref("prefsLayerAdvancedExpanded", false);
