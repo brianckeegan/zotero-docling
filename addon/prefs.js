@@ -47,6 +47,10 @@ pref("exportFolderPath", "");
 // OS-level notification when a batch finishes, only if Zotero isn't focused.
 pref("notifyOnComplete", false);
 
+// Show a confirmation prompt before the destructive "Re-convert (replace)"
+// menu action. Users can opt out via a "Don't ask again" checkbox in the
+// dialog itself; Reset to defaults restores this.
+pref("confirmReconvert", true);
 // First-run onboarding nudge. Flipped to true after the first startup
 // toast fires OR after the first successful Test Connection. Reset to
 // defaults re-arms the nudge.
