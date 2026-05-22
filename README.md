@@ -233,6 +233,16 @@ isn't silent.
   invites this kind of integration.
 - Built with help from **Anthropic's Claude** (Claude Code).
 
+### Contributors
+
+Thanks to everyone who has contributed code, bug reports, or review:
+
+<a href="https://github.com/max3925vats/zotero-docling/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=max3925vats/zotero-docling" alt="Contributors" />
+</a>
+
+<sub>Avatars auto-rendered by [contrib.rocks](https://contrib.rocks); bots (e.g. dependabot) are filtered out by the upstream service.</sub>
+
 ---
 
 ## License
