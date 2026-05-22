@@ -51,3 +51,11 @@ pref("notifyOnComplete", false);
 // menu action. Users can opt out via a "Don't ask again" checkbox in the
 // dialog itself; Reset to defaults restores this.
 pref("confirmReconvert", true);
+// First-run onboarding nudge. Flipped to true after the first startup
+// toast fires OR after the first successful Test Connection. Reset to
+// defaults re-arms the nudge.
+pref("firstRunCompleted", false);
+// Last "Test Connection" result; surfaced when the prefs pane opens so a
+// returning user sees the previous state without re-clicking. JSON string:
+// {"ok": bool, "message": str, "at": ISO-8601 timestamp}. Empty when unset.
+pref("lastHealthResult", "");

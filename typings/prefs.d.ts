@@ -31,6 +31,8 @@ declare namespace _ZoteroTypes {
       "exportFolderPath": string;
       "notifyOnComplete": boolean;
       "confirmReconvert": boolean;
+      "firstRunCompleted": boolean;
+      "lastHealthResult": string;
     };
   }
 }
