@@ -231,6 +231,51 @@ is always on and doesn't depend on the Max wait setting.
 
 ---
 
+## Troubleshooting
+
+### Apple Silicon (M1/M2/M3/M4): `MPS Tensor to float64` error
+
+If conversion fails on a Mac with Apple Silicon and the `docling-serve`
+log contains a long Python traceback ending with:
+
+```
+TypeError: Cannot convert a MPS Tensor to float64 dtype as the MPS
+framework doesn't support float64. Please use float32 instead.
+```
+
+…this is an upstream interop bug between `transformers`' RT-DETRv2
+layout model and PyTorch's MPS (Metal) backend. The model hard-codes a
+`float64` tensor that MPS cannot represent.
+
+**Fastest workaround**: restart `docling-serve` with PyTorch's
+fall-back-to-CPU flag set, so unsupported MPS ops route to CPU
+silently:
+
+```bash
+PYTORCH_ENABLE_MPS_FALLBACK=1 docling-serve run
+```
+
+The layout stage will be slightly slower than full-MPS, but the rest of
+the pipeline keeps using MPS where it works.
+
+**Cleaner workaround** — force the layout stage entirely onto CPU:
+
+```bash
+DOCLING_PIPELINE_OPTIONS_ACCELERATOR_OPTIONS_DEVICE=cpu docling-serve run
+```
+
+(Older `docling-serve` builds spell this env var differently; check
+`docling-serve --help | grep -i accel` on your version.)
+
+This is **not** a plugin bug — the plugin only forwards form fields
+docling-serve accepts. We surface the workaround in the conversion-error
+toast when the response body contains both `MPS` and `float64`, but the
+fix has to be applied server-side. Tracking upstream in the
+[transformers issue tracker](https://github.com/huggingface/transformers/issues)
+under the `rt_detr_v2` / MPS keywords.
+
+---
+
 ## Acknowledgments
 
 - The **[Docling team](https://github.com/docling-project)** for shipping
