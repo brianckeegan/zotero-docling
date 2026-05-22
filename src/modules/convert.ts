@@ -12,7 +12,10 @@ import {
   getLocalFilePath,
   isConvertiblePdf,
 } from "../utils/zotero";
-import { buildFrontmatter } from "../utils/frontmatter";
+import {
+  buildFrontmatter,
+  stripExistingFrontmatter,
+} from "../utils/frontmatter";
 import { withDbLock } from "../utils/dbLock";
 
 const LOG = "[zotero-docling]";
@@ -108,7 +111,7 @@ export function getWebApis(): {
 }
 
 export type ConvertResult =
-  | { status: "ok"; attachmentID: number }
+  | { status: "ok"; attachmentID: number; processingTimeSec?: number }
   | { status: "skipped"; reason: string }
   | { status: "error"; message: string };
 
@@ -118,6 +121,14 @@ export type ConvertResult =
  * lands for the same item while the first is still running we skip the
  * duplicate — otherwise docling-serve happily processes both and we end
  * up with two .md siblings.
+ *
+ * Why this exists alongside `addon.data.batchInFlight`: the batch flag
+ * prevents two batches starting simultaneously at the orchestrator level
+ * (one click → one batch). This per-item set provides defence-in-depth
+ * against future call paths that bypass the batch orchestrator and call
+ * `convertAttachment` directly — e.g. a new auto-convert trigger, a unit
+ * test, or a future cancel-and-retry feature. The two guards protect
+ * different layers, so both stay.
  */
 const inFlightItems = new Set<number>();
 
@@ -146,8 +157,11 @@ interface ConvertResponse {
  * Build the multipart body for POST /v1/convert/file by reading all relevant
  * prefs and turning them into flat form fields. The `advancedJson` pref is
  * merged last, so it overrides anything else.
+ *
+ * Exported only so the unit tests in test/ can exercise the pref-to-form
+ * mapping without going through the network path.
  */
-function buildConvertForm(
+export function buildConvertForm(
   pdfBytes: Uint8Array,
   filename: string,
   api: { FormData: typeof FormData; Blob: typeof Blob },
@@ -601,10 +615,15 @@ async function convertAttachmentInner(
   }
 
   // --- 7. Optionally prepend YAML frontmatter built from parent's metadata ---
+  // If the server returned markdown that already begins with a YAML block
+  // (rare on docling-serve 1.18.0 but possible if a future server-side
+  // post-processor adds one), strip it before prepending our own so we don't
+  // end up with two `---` blocks.
   const addFrontmatter = (getPref("addFrontmatter") ?? true) as boolean;
   const parentItem = Zotero.Items.get(parentItemID);
   const fm = addFrontmatter ? buildFrontmatter(parentItem ?? null) : "";
-  const markdown = fm ? `${fm}\n${rawMarkdown}` : rawMarkdown;
+  const body = fm ? stripExistingFrontmatter(rawMarkdown) : rawMarkdown;
+  const markdown = fm ? `${fm}\n${body}` : body;
 
   // --- 8. Resolve output destinations ---
   // Two independent sinks: the Zotero attachment (always default on) and an
@@ -699,7 +718,14 @@ async function convertAttachmentInner(
   Zotero.debug(
     `${LOG} ok item=${item.key} md=${markdown.length}b in ${data.processing_time ?? "?"}s`,
   );
-  return { status: "ok", attachmentID: attachmentID ?? -1 };
+  return {
+    status: "ok",
+    attachmentID: attachmentID ?? -1,
+    processingTimeSec:
+      typeof data.processing_time === "number"
+        ? data.processing_time
+        : undefined,
+  };
 }
 
 /**
@@ -749,6 +775,30 @@ export async function testServerConnection(
 ): Promise<{ ok: true; serverUrl: string } | { ok: false; message: string }> {
   const url = serverUrl.replace(/\/+$/, "").trim();
   if (!url) return { ok: false, message: "Server URL is empty" };
+  // Validate before issuing a fetch — a missing scheme or unexpected path
+  // produces confusing low-level errors otherwise. We require an http(s) URL
+  // with no path component because every endpoint we hit appends its own.
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return {
+      ok: false,
+      message: `Invalid URL — missing scheme? Try http://${url}`,
+    };
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return {
+      ok: false,
+      message: `Unsupported scheme "${parsed.protocol}" — use http or https`,
+    };
+  }
+  if (parsed.pathname !== "/" && parsed.pathname !== "") {
+    return {
+      ok: false,
+      message: `Server URL must not include a path (got "${parsed.pathname}")`,
+    };
+  }
   let api: ReturnType<typeof getWebApis>;
   try {
     api = getWebApis();

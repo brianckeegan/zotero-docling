@@ -34,6 +34,9 @@ declare namespace _ZoteroTypes {
       "attachToItem": boolean;
       "exportFolderPath": string;
       "notifyOnComplete": boolean;
+      "confirmReconvert": boolean;
+      "firstRunCompleted": boolean;
+      "lastHealthResult": string;
     };
   }
 }

@@ -27,9 +27,12 @@ Please **do not** report security issues in public issues. Use [GitHub's Private
 
 ## Development setup
 
+Requires Node 20 or later (declared in `package.json` `engines` and pinned in `.nvmrc`).
+
 ```bash
 git clone https://github.com/max3925vats/zotero-docling.git
 cd zotero-docling
+nvm use            # if you use nvm — picks up .nvmrc
 npm install
 cp .env.example .env
 # Then edit .env: set ZOTERO_PLUGIN_ZOTERO_BIN_PATH and
