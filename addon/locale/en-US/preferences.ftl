@@ -76,6 +76,8 @@ pref-async-help = Submit the job to docling-serve's async endpoint and poll for 
 pref-use-async =
     .label = Use the async endpoint (/v1/convert/file/async)
 pref-async-poll = Poll interval (s)
+pref-async-max-wait = Max wait (min)
+pref-async-max-wait-help = Client-side ceiling for a single async task. When exceeded, the plugin stops polling and reports an error. docling-serve has no per-task cancel API, so the server-side task may still complete in the background.
 
 pref-advanced-title = Advanced
 pref-advanced-help = JSON object whose top-level keys are sent as form fields to docling-serve and override the controls above. Use this for any docling-serve option not exposed elsewhere in this pane. The full schema is documented in the docling-serve OpenAPI surface at /docs on your running server.

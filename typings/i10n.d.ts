@@ -19,6 +19,8 @@ export type FluentMessageId =
   | 'pref-advanced-help'
   | 'pref-advanced-title'
   | 'pref-async-help'
+  | 'pref-async-max-wait'
+  | 'pref-async-max-wait-help'
   | 'pref-async-poll'
   | 'pref-async-title'
   | 'pref-attach-to-item'
