@@ -10,6 +10,10 @@ declare namespace _ZoteroTypes {
       "serverUrl": string;
       "autoConvert": boolean;
       "skipIfExists": boolean;
+      "authScheme": string;
+      "authUsername": string;
+      "authSecret": string;
+      "authHeaderName": string;
       "pipeline": string;
       "doOcr": boolean;
       "forceOcr": boolean;

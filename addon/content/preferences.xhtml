@@ -31,6 +31,69 @@
         style="margin-left: 110px; font-style: italic; min-height: 1.4em"
       ></html:label>
     </hbox>
+
+    <!-- Authentication (optional) -->
+    <hbox align="center">
+      <html:label
+        data-l10n-id="pref-auth-scheme"
+        style="min-width: 110px"
+      ></html:label>
+      <menulist id="zotero-docling-auth-scheme" preference="authScheme">
+        <menupopup>
+          <menuitem value="none" data-l10n-id="pref-auth-scheme-none" />
+          <menuitem value="bearer" data-l10n-id="pref-auth-scheme-bearer" />
+          <menuitem value="basic" data-l10n-id="pref-auth-scheme-basic" />
+          <menuitem value="custom" data-l10n-id="pref-auth-scheme-custom" />
+        </menupopup>
+      </menulist>
+    </hbox>
+    <hbox align="center" id="zotero-docling-auth-username-row" hidden="true">
+      <html:label
+        for="zotero-docling-auth-username"
+        id="zotero-docling-auth-username-label"
+        data-l10n-id="pref-auth-username"
+        style="min-width: 110px"
+      ></html:label>
+      <html:input
+        type="text"
+        id="zotero-docling-auth-username"
+        preference="authUsername"
+        style="flex: 1"
+      ></html:input>
+    </hbox>
+    <hbox align="center" id="zotero-docling-auth-header-name-row" hidden="true">
+      <html:label
+        for="zotero-docling-auth-header-name"
+        data-l10n-id="pref-auth-header-name"
+        style="min-width: 110px"
+      ></html:label>
+      <html:input
+        type="text"
+        id="zotero-docling-auth-header-name"
+        preference="authHeaderName"
+        placeholder="X-API-Key"
+        style="flex: 1"
+      ></html:input>
+    </hbox>
+    <hbox align="center" id="zotero-docling-auth-secret-row" hidden="true">
+      <html:label
+        for="zotero-docling-auth-secret"
+        id="zotero-docling-auth-secret-label"
+        data-l10n-id="pref-auth-secret"
+        style="min-width: 110px"
+      ></html:label>
+      <html:input
+        type="password"
+        id="zotero-docling-auth-secret"
+        preference="authSecret"
+        style="flex: 1"
+      ></html:input>
+    </hbox>
+    <description
+      id="zotero-docling-auth-help"
+      data-l10n-id="pref-auth-help"
+      hidden="true"
+    ></description>
   </groupbox>
 
   <!-- ============================================================ -->

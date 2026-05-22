@@ -39,6 +39,51 @@ function log(...args: unknown[]): void {
 }
 
 /**
+ * Build the auth header(s) to send with every request based on the configured
+ * `authScheme` pref. Returns an empty object when scheme is "none" (the default).
+ *
+ * Wire format:
+ *   - bearer:  Authorization: Bearer <token>
+ *   - basic:   Authorization: Basic <base64(username:password)>
+ *   - custom:  <header-name>: <header-value>  (single header, v1)
+ *
+ * The `Zotero.Prefs` store is plain text inside the user's profile — surface
+ * this in the prefs help and SECURITY.md rather than pretending it's secure.
+ */
+export function buildAuthHeader(): Record<string, string> {
+  const scheme = ((getPref("authScheme") ?? "none") as string).toLowerCase();
+  if (scheme === "none" || scheme === "") return {};
+
+  if (scheme === "bearer") {
+    const token = ((getPref("authSecret") as string) ?? "").trim();
+    if (!token) return {};
+    return { Authorization: `Bearer ${token}` };
+  }
+
+  if (scheme === "basic") {
+    const user = ((getPref("authUsername") as string) ?? "").trim();
+    const pass = (getPref("authSecret") as string) ?? "";
+    if (!user && !pass) return {};
+    // Use globalThis.btoa — exposed in Z9's sandbox; fall back to Buffer if
+    // someone runs this under Node tests.
+    const encoded = (
+      (globalThis as any).btoa ??
+      ((s: string) => Buffer.from(s, "binary").toString("base64"))
+    )(`${user}:${pass}`);
+    return { Authorization: `Basic ${encoded}` };
+  }
+
+  if (scheme === "custom") {
+    const name = ((getPref("authHeaderName") as string) ?? "").trim();
+    const value = ((getPref("authSecret") as string) ?? "").trim();
+    if (!name || !value) return {};
+    return { [name]: value };
+  }
+
+  return {};
+}
+
+/**
  * Z9's plugin sandbox exposes some Web APIs as bare globals (e.g. fetch) but
  * not others (e.g. FormData, Blob). Prefer bare globals when present, fall
  * back to a window context when not.
@@ -339,6 +384,7 @@ async function fetchConvertResultSync(
     response = await api.fetch(`${serverUrl}/v1/convert/file`, {
       method: "POST",
       body: form,
+      headers: buildAuthHeader(),
     });
   } catch (e) {
     Zotero.debug(`${LOG} sync fetch failed: ${(e as Error).message}`);
@@ -367,11 +413,13 @@ async function fetchConvertResultAsync(
   );
 
   // 1. Submit
+  const authHeaders = buildAuthHeader();
   let submitResp: Response;
   try {
     submitResp = await api.fetch(`${serverUrl}/v1/convert/file/async`, {
       method: "POST",
       body: form,
+      headers: authHeaders,
     });
   } catch (e) {
     Zotero.debug(`${LOG} async submit failed: ${(e as Error).message}`);
@@ -397,7 +445,9 @@ async function fetchConvertResultAsync(
 
     let pollResp: Response;
     try {
-      pollResp = await api.fetch(`${serverUrl}/v1/status/poll/${taskId}`);
+      pollResp = await api.fetch(`${serverUrl}/v1/status/poll/${taskId}`, {
+        headers: authHeaders,
+      });
     } catch (e) {
       Zotero.debug(`${LOG} async poll failed: ${(e as Error).message}`);
       // Transient network blip — keep polling until maxWait expires.
@@ -428,7 +478,9 @@ async function fetchConvertResultAsync(
   // 3. Fetch result
   let resultResp: Response;
   try {
-    resultResp = await api.fetch(`${serverUrl}/v1/result/${taskId}`);
+    resultResp = await api.fetch(`${serverUrl}/v1/result/${taskId}`, {
+      headers: authHeaders,
+    });
   } catch (e) {
     Zotero.debug(`${LOG} async result fetch failed: ${(e as Error).message}`);
     return { ok: false, message: "Server not reachable while fetching result" };
@@ -754,7 +806,10 @@ export async function testServerConnection(
     return { ok: false, message: (e as Error).message };
   }
   try {
-    const r = await api.fetch(`${url}/health`, { method: "GET" });
+    const r = await api.fetch(`${url}/health`, {
+      method: "GET",
+      headers: buildAuthHeader(),
+    });
     if (!r.ok) return { ok: false, message: `HTTP ${r.status}` };
     const body = await r.json().catch(() => ({}) as { status?: string });
     if ((body as { status?: string }).status === "ok") {
