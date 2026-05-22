@@ -18,6 +18,10 @@ const ALL_PREF_KEYS: ReadonlyArray<string> = [
   "serverUrl",
   "autoConvert",
   "skipIfExists",
+  "authScheme",
+  "authUsername",
+  "authSecret",
+  "authHeaderName",
   "pipeline",
   "doOcr",
   "forceOcr",
@@ -50,7 +54,61 @@ export function registerPrefsScripts(win: Window): void {
   bindPipelineToggle(win);
   bindPresetCustomToggle(win, "vlm");
   bindPresetCustomToggle(win, "pic");
+  bindAuthSchemeToggle(win);
   bindResetButton(win);
+}
+
+/**
+ * Authentication scheme menu → show/hide the relevant credential rows.
+ *
+ *   none    → no credential rows
+ *   bearer  → secret row (labelled "Token")
+ *   basic   → username row + secret row (labelled "Password")
+ *   custom  → header-name row + secret row (labelled "Header value")
+ *
+ * Same labels for "secret" and "username" rows are reused across schemes
+ * and rewritten dynamically — saves declaring four separate input widgets
+ * bound to four prefs that all mean roughly the same thing.
+ */
+function bindAuthSchemeToggle(win: Window): void {
+  const menu = win.document.getElementById("zotero-docling-auth-scheme") as
+    | (HTMLElement & { value?: string })
+    | null;
+  const usernameRow = win.document.getElementById(
+    "zotero-docling-auth-username-row",
+  ) as HTMLElement | null;
+  const headerNameRow = win.document.getElementById(
+    "zotero-docling-auth-header-name-row",
+  ) as HTMLElement | null;
+  const secretRow = win.document.getElementById(
+    "zotero-docling-auth-secret-row",
+  ) as HTMLElement | null;
+  const secretLabel = win.document.getElementById(
+    "zotero-docling-auth-secret-label",
+  ) as HTMLElement | null;
+  const help = win.document.getElementById(
+    "zotero-docling-auth-help",
+  ) as HTMLElement | null;
+  if (!menu || !usernameRow || !headerNameRow || !secretRow) return;
+
+  const refresh = () => {
+    const scheme = ((menu.value as string) || "none").toLowerCase();
+    const showSecret = scheme !== "none";
+    usernameRow.hidden = scheme !== "basic";
+    headerNameRow.hidden = scheme !== "custom";
+    secretRow.hidden = !showSecret;
+    if (help) help.hidden = !showSecret;
+    // Relabel the secret input so the field name matches the chosen scheme.
+    if (secretLabel) {
+      let id = "pref-auth-secret";
+      if (scheme === "bearer") id = "pref-auth-token";
+      else if (scheme === "basic") id = "pref-auth-password";
+      else if (scheme === "custom") id = "pref-auth-header-value";
+      secretLabel.setAttribute("data-l10n-id", id);
+    }
+  };
+  menu.addEventListener("command", refresh);
+  refresh();
 }
 
 /** "Test Connection" button → calls /health, paints status label. */

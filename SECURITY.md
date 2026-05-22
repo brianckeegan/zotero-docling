@@ -32,6 +32,17 @@ This plugin is solo-maintained on a best-effort basis. Realistic expectations:
 
 Reporters will be credited in the release notes unless they prefer to remain anonymous.
 
+## A note on stored credentials
+
+The plugin supports optional authentication (Bearer token, Basic auth, or a custom header) against a protected `docling-serve` instance. These credentials are stored in `Zotero.Prefs`, which writes to a plain-text `prefs.js` file inside the user's Zotero profile directory. There is no OS-keyring integration in v1.
+
+Practical implications:
+
+- **Anyone with read access to the user's Zotero profile directory can read the stored credentials.** This includes other local users on the same machine, full-disk backups, and unencrypted sync targets.
+- **Use a least-privilege credential.** Prefer a server-side API key scoped to docling-serve only, or a Basic-auth account with no other use, over a shared secret that grants access elsewhere.
+- **Prefer HTTPS for non-local servers.** The configured auth header is sent on every request, including the `/health` preflight; over plain HTTP it is visible to anyone on the network path.
+- **Profile-directory threats remain out of scope** (see below) — once an attacker has the profile, they can do worse things directly.
+
 ## Scope
 
 This plugin runs inside Zotero's plugin sandbox and communicates with a user-configured `docling-serve` HTTP endpoint. In-scope security concerns include:

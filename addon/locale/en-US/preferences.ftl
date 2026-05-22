@@ -1,6 +1,22 @@
 pref-server-title = docling-serve
 pref-server-url = Server URL
 pref-test-connection = Test Connection
+pref-auth-scheme = Auth
+pref-auth-scheme-none =
+    .label = None
+pref-auth-scheme-bearer =
+    .label = Bearer token
+pref-auth-scheme-basic =
+    .label = Basic auth
+pref-auth-scheme-custom =
+    .label = Custom header
+pref-auth-username = Username
+pref-auth-header-name = Header name
+pref-auth-secret = Secret
+pref-auth-token = Token
+pref-auth-password = Password
+pref-auth-header-value = Header value
+pref-auth-help = Sent on every request to docling-serve, including Test Connection. Stored unencrypted in your Zotero profile — use a least-privilege key, and prefer HTTPS for non-local servers.
 
 pref-behavior-title = Behavior
 pref-auto-convert =
