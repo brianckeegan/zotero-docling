@@ -70,6 +70,9 @@ You need both.
 - **Full Docling options surfaced**: pipeline (standard / VLM), OCR + language,
   table mode, formula / code / chart / picture enrichments, VLM presets, plus
   an Advanced JSON escape hatch for anything not in the UI.
+- **Exclude images** (opt-in): keep the markdown text-and-tables only — each
+  figure becomes a tiny placeholder comment instead of megabytes of embedded
+  base64 image data. Tick **Exclude images** in **Settings → Output**.
 - **Per-parent status tags**: parents get tagged `docling/done`,
   `docling/incomplete`, or `docling/error` so you can filter your library by
   conversion status.

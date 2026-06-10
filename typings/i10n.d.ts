@@ -55,6 +55,8 @@ export type FluentMessageId =
   | 'pref-enable'
   | 'pref-enrichments-help'
   | 'pref-enrichments-title'
+  | 'pref-exclude-images'
+  | 'pref-exclude-images-help'
   | 'pref-export-folder'
   | 'pref-export-folder-help'
   | 'pref-force-ocr'
