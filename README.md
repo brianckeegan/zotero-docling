@@ -73,6 +73,11 @@ You need both.
 - **Exclude images** (opt-in): keep the markdown text-and-tables only — each
   figure becomes a tiny placeholder comment instead of megabytes of embedded
   base64 image data. Tick **Exclude images** in **Settings → Output**.
+- **Remove images from existing markdown**: right-click already-converted
+  items (or **Tools → Docling: Remove images from markdown…**) to rewrite
+  their `.md` attachments in place, swapping every embedded image for a
+  `<!-- image -->` placeholder — the retroactive version of Exclude images,
+  no re-conversion needed.
 - **Per-parent status tags**: parents get tagged `docling/done`,
   `docling/incomplete`, or `docling/error` so you can filter your library by
   conversion status.
@@ -240,6 +245,24 @@ The zip is flat — each markdown file lives at the root, named
 hasn't assigned a citation key). When a parent has multiple converted
 PDFs, the second and subsequent get `.1.md`, `.2.md`, … suffixes to
 prevent collisions.
+
+### Removing images from already-converted markdown
+
+Markdown converted without the **Exclude images** option embeds every
+figure as base64 data, which can make a single paper's `.md` tens of
+megabytes. To slim down existing files without re-converting:
+
+1. Select the items (parents, PDF attachments, or `.md` attachments) in
+   your library.
+2. **Right-click → Remove images from markdown**, or open
+   **Tools → Docling: Remove images from markdown…**.
+3. Confirm the dialog. Each `.md` attachment is rewritten in place with
+   every image replaced by a `<!-- image -->` placeholder; a toast reports
+   how many images were removed and how much space was saved.
+
+The image data is gone for good after this — re-convert the PDF if you
+ever need the figures back. Code blocks inside the markdown are left
+untouched.
 
 ---
 
