@@ -1,8 +1,9 @@
 # zotero-docling
 
-A Zotero 7+/9 plugin that converts PDF attachments to structured Markdown using
-the [Docling](https://github.com/docling-project/docling) document-understanding
-pipeline, and attaches the resulting `.md` file back to the same parent item.
+A Zotero plugin (Zotero 7 or later) that converts PDF attachments to structured
+Markdown using the [Docling](https://github.com/docling-project/docling)
+document-understanding pipeline, and attaches the resulting `.md` file back to
+the same parent item.
 
 [![Release](https://img.shields.io/github/v/release/max3925vats/zotero-docling?style=flat-square)](https://github.com/max3925vats/zotero-docling/releases/latest)
 [![License](https://img.shields.io/github/license/max3925vats/zotero-docling?style=flat-square)](LICENSE)
@@ -13,9 +14,44 @@ pipeline, and attaches the resulting `.md` file back to the same parent item.
 
 ---
 
-Structured markdown makes a clean upstream for note apps, RAG pipelines,
-citation extraction, summarisation, literature reviews, and any downstream
-tool that prefers plain text over PDFs.
+Markdown is plain text, so converted papers drop straight into note apps like
+Obsidian, AI/RAG pipelines, citation extraction, summarisation, literature
+reviews — anything that prefers text over PDFs.
+
+---
+
+## Quick start
+
+The setup has two halves: a small **local server**
+([docling-serve](https://github.com/docling-project/docling-serve)) does the
+actual PDF → Markdown conversion, and this **plugin** connects Zotero to it.
+You need both.
+
+1. **Start the converter server.** The quickest path uses
+   [uv](https://docs.astral.sh/uv/getting-started/installation/) (a Python
+   tool installer); see [Install the server](#install-the-server-docling-serve)
+   for pipx and Docker alternatives that may suit you better.
+
+   ```bash
+   uv tool install "docling-serve[ui]"   # one-time install
+   docling-serve run                     # leave this terminal open
+   ```
+
+2. **Install the plugin.** Download the latest `.xpi` file from the
+   [Releases page](https://github.com/max3925vats/zotero-docling/releases/latest)
+   (if your browser tries to install it itself, right-click the link and
+   choose "Save Link As…"). Then in Zotero: **Tools → Plugins → ⚙ →
+   Install Plugin From File…** → pick the `.xpi`.
+
+3. **Connect them.** In Zotero, open **Settings → zotero-docling** and click
+   **Test Connection** — it should turn green. Then right-click any PDF in
+   your library → **Convert with Docling**.
+
+> [!NOTE]
+> Your very first conversion downloads model weights and can take 2–10
+> minutes while appearing to hang — that's normal, and later conversions
+> take seconds. See
+> [First conversion downloads model weights](#first-conversion-downloads-model-weights).
 
 ---
 
@@ -61,7 +97,8 @@ tool that prefers plain text over PDFs.
 ## Install the server (docling-serve)
 
 Pick one of the three paths below — they all yield a `docling-serve` you can
-point the plugin at. Roughly:
+point the plugin at. If you've never touched Python tooling, the container
+path avoids it entirely. Roughly:
 
 | Option        | Best for                                                        | Needs                |
 | ------------- | --------------------------------------------------------------- | -------------------- |
@@ -71,12 +108,18 @@ point the plugin at. Roughly:
 
 ### Option A — uv (recommended)
 
+Don't have `uv` yet? It's a one-line install — see the
+[uv installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+
 ```bash
 uv tool install "docling-serve[ui]"   # one-time install
 docling-serve run                      # leave this terminal open
 ```
 
 ### Option B — pipx
+
+Don't have `pipx` yet? See the
+[pipx installation guide](https://pipx.pypa.io/stable/installation/).
 
 ```bash
 pipx install "docling-serve[ui]"      # one-time install
@@ -99,13 +142,16 @@ docker run --gpus all -p 5001:5001 \
 
 ### Sanity check (any option)
 
+Open <http://localhost:5001/ui> in your browser — the docling-serve
+playground page should load. Or, from a terminal:
+
 ```bash
 curl http://localhost:5001/health    # → {"status":"ok"}
 ```
 
-### ⚠️ First conversion downloads model weights
+### First conversion downloads model weights
 
-The first time you convert a PDF, `docling-serve` downloads the model files
+⚠️ The first time you convert a PDF, `docling-serve` downloads the model files
 from Hugging Face. Expect **2–10 minutes** for the standard pipeline and
 **significantly longer** (multi-GB) for VLM presets. Subsequent conversions
 are fast. The Zotero progress window will appear to hang during the
@@ -123,13 +169,18 @@ docling-serve run
 
 ## Install the plugin
 
-### From a release (when available)
+### From a release (recommended)
 
-Download the latest `.xpi` from the [Releases page](https://github.com/max3925vats/zotero-docling/releases),
-then in Zotero: **Tools → Plugins → ⚙ → Install Plugin From File…** → pick the
-`.xpi`.
+1. Download the latest `.xpi` from the
+   [Releases page](https://github.com/max3925vats/zotero-docling/releases/latest).
+   If your browser tries to install the file itself (Firefox does this),
+   right-click the link and choose **Save Link As…** instead.
+2. In Zotero: **Tools → Plugins** → click the gear icon (⚙) →
+   **Install Plugin From File…** → pick the downloaded `.xpi`.
 
-### From source
+### From source (for development)
+
+Requires [Node.js](https://nodejs.org/) 20 or later:
 
 ```bash
 git clone https://github.com/max3925vats/zotero-docling.git
@@ -140,7 +191,8 @@ npm run build       # outputs .scaffold/build/*.xpi
 
 Then install the `.xpi` via **Tools → Plugins** as above.
 
-> **macOS note**: profile paths that contain spaces (for example
+> **macOS note** (for the `npm start` development workflow): profile paths
+> that contain spaces (for example
 > `~/Library/Application Support/Zotero/...`) must be written literally in
 > `.env` — **no** backslash escapes. See [`.env.example`](.env.example) for
 > the exact format.
@@ -151,9 +203,12 @@ Then install the `.xpi` via **Tools → Plugins** as above.
 
 1. **Settings**: open Zotero → **Settings → zotero-docling**.
 2. Verify the server URL (default `http://localhost:5001`) and click **Test
-   Connection** — it should turn green.
+   Connection** — it should turn green. If it doesn't, make sure the
+   `docling-serve` terminal from the install step is still running.
 3. Right-click a PDF (or parent item) in your library → **Convert with
-   Docling**. Within seconds you'll see a `.md` child appear under the parent.
+   Docling**. A `.md` child appears under the parent — within seconds once
+   the [first-run model download](#first-conversion-downloads-model-weights)
+   is out of the way.
 4. (Optional) tick **Auto-convert new PDF attachments** in Behavior to run
    conversion automatically as you import new PDFs.
 
