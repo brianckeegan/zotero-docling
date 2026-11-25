@@ -4,7 +4,9 @@
 //   - Preset dropdowns "Custom…" entry → reveal a free-text input
 //   - "Reset to defaults" button → confirm + clear every plugin pref
 
+import { getLocaleID } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
+import { FluentMessageId } from "../../typings/i10n";
 import { testServerConnection } from "./convert";
 
 const LOG = "[zotero-docling]";
@@ -39,6 +41,13 @@ const ALL_PREF_KEYS: ReadonlyArray<string> = [
   "useAsyncEndpoint",
   "asyncPollIntervalSec",
   "asyncMaxWaitMin",
+  "vlmPresetCustom",
+  "pictureDescriptionPresetCustom",
+  "healthTimeoutSec",
+  "pollTimeoutSec",
+  "asyncUploadTimeoutMin",
+  "asyncResultTimeoutMin",
+  "syncTimeoutMin",
   "maxConcurrency",
   "addFrontmatter",
   "attachToItem",
@@ -76,7 +85,6 @@ const VLM_PRESET_DETAIL: Record<string, string> = {
   glm_ocr: "GLM-4V OCR — Zhipu AI, multi-GB.",
   lightonocr: "LightOnOCR — efficient OCR-focused VLM.",
   falcon_ocr: "Falcon OCR — TII multilingual OCR.",
-  __custom__: "Type any preset name your docling-serve build supports.",
 };
 
 const PIC_PRESET_DETAIL: Record<string, string> = {
@@ -84,8 +92,33 @@ const PIC_PRESET_DETAIL: Record<string, string> = {
     "docling-serve's built-in default. Small, fast, sensible starting point.",
   smolvlm: "SmolVLM — smallest local picture-description model. ~500 MB.",
   granite_vision: "IBM Granite Vision — better descriptions, ~500 MB.",
-  __custom__: "Type any preset name your docling-serve build supports.",
 };
+
+/**
+ * Fluent ID for the auth secret label, by scheme. Returned with the build's
+ * addonRef prefix: a bare ID set at runtime doesn't resolve, which left the
+ * label blank (audit H4).
+ */
+export function authSecretLabelId(scheme: string): string {
+  if (scheme === "bearer") return getLocaleID("pref-auth-token");
+  if (scheme === "basic") return getLocaleID("pref-auth-password");
+  if (scheme === "custom") return getLocaleID("pref-auth-header-value");
+  return getLocaleID("pref-auth-secret");
+}
+
+/**
+ * Older versions stored a typed custom preset name directly in the menu's
+ * pref, which the menu can't display. Returns the split to apply
+ * (menu → "Custom…", name → custom field), or null if `value` is a known
+ * menu entry and nothing needs migrating.
+ */
+export function migrateLegacyCustomPreset(
+  value: string,
+  known: string[],
+): { preset: string; custom: string } | null {
+  if (!value || known.includes(value)) return null;
+  return { preset: "__custom__", custom: value };
+}
 
 export function registerPrefsScripts(win: Window): void {
   // Keep a handle to the prefs window in addon.data — the template's addon.ts
@@ -94,27 +127,41 @@ export function registerPrefsScripts(win: Window): void {
   addon.data.prefs.window = win;
 
   bindTestConnection(win);
-  bindPipelineToggle(win);
-  bindPresetCustomToggle(win, "vlm");
-  bindPresetCustomToggle(win, "pic");
-  bindAuthSchemeToggle(win);
-  bindPresetDetail(win, "vlm", VLM_PRESET_DETAIL, "vlmPreset");
-  bindPresetDetail(win, "pic", PIC_PRESET_DETAIL, "pictureDescriptionPreset");
-  bindDisclosure(
-    win,
-    "zotero-docling-disclosure-conversion",
-    "zotero-docling-conversion-section",
-    "prefsLayerConversionExpanded",
-    "Conversion options",
+  // Each binder returns the function that re-syncs its piece of the pane
+  // from prefs; Reset re-runs them all after clearing (audit M12).
+  const refreshers: Array<() => void> = [];
+  const keep = (r: (() => void) | void) => {
+    if (r) refreshers.push(r);
+  };
+  keep(bindPipelineToggle(win));
+  keep(bindPresetCustomToggle(win, "vlm"));
+  keep(bindPresetCustomToggle(win, "pic"));
+  keep(bindAuthSchemeToggle(win));
+  keep(bindPresetDetail(win, "vlm", VLM_PRESET_DETAIL, "vlmPreset"));
+  keep(
+    bindPresetDetail(win, "pic", PIC_PRESET_DETAIL, "pictureDescriptionPreset"),
   );
-  bindDisclosure(
-    win,
-    "zotero-docling-disclosure-advanced",
-    "zotero-docling-advanced-section",
-    "prefsLayerAdvancedExpanded",
-    "Advanced",
+  keep(
+    bindDisclosure(
+      win,
+      "zotero-docling-disclosure-conversion",
+      "zotero-docling-conversion-section",
+      "prefsLayerConversionExpanded",
+      "pref-disclosure-conversion-collapsed",
+      "pref-disclosure-conversion-expanded",
+    ),
   );
-  bindResetButton(win);
+  keep(
+    bindDisclosure(
+      win,
+      "zotero-docling-disclosure-advanced",
+      "zotero-docling-advanced-section",
+      "prefsLayerAdvancedExpanded",
+      "pref-disclosure-advanced-collapsed",
+      "pref-disclosure-advanced-expanded",
+    ),
+  );
+  bindResetButton(win, refreshers);
 }
 
 /**
@@ -128,15 +175,21 @@ function bindDisclosure(
   buttonId: string,
   sectionId: string,
   prefKey: "prefsLayerConversionExpanded" | "prefsLayerAdvancedExpanded",
-  baseLabel: string,
-): void {
+  collapsedL10nId: FluentMessageId,
+  expandedL10nId: FluentMessageId,
+): (() => void) | void {
   const btn = win.document.getElementById(buttonId) as HTMLElement | null;
   const section = win.document.getElementById(sectionId) as HTMLElement | null;
   if (!btn || !section) return;
 
   const refresh = (expanded: boolean) => {
     section.hidden = !expanded;
-    btn.textContent = `${expanded ? "▼" : "▶"} ${baseLabel}`;
+    // getLocaleID adds the addonRef prefix the build applies to every FTL
+    // message; a bare ID would not resolve and the heading would go blank.
+    btn.setAttribute(
+      "data-l10n-id",
+      getLocaleID(expanded ? expandedL10nId : collapsedL10nId),
+    );
   };
 
   const initial = (getPref(prefKey) ?? false) as boolean;
@@ -158,6 +211,7 @@ function bindDisclosure(
       /* persistence is nice-to-have */
     }
   });
+  return () => refresh((getPref(prefKey) ?? false) as boolean);
 }
 
 /**
@@ -170,25 +224,45 @@ function bindPresetDetail(
   kind: "vlm" | "pic",
   detailMap: Record<string, string>,
   prefKey: "vlmPreset" | "pictureDescriptionPreset",
-): void {
+): (() => void) | void {
   const menu = win.document.getElementById(
     `zotero-docling-${kind}-preset-menu`,
+  ) as (HTMLElement & { value?: string }) | null;
+  const custom = win.document.getElementById(
+    `zotero-docling-${kind}-preset-custom`,
   ) as (HTMLElement & { value?: string }) | null;
   const detail = win.document.getElementById(
     `zotero-docling-${kind}-preset-detail`,
   ) as HTMLElement | null;
   if (!menu || !detail) return;
+  const customKey =
+    prefKey === "vlmPreset"
+      ? "vlmPresetCustom"
+      : "pictureDescriptionPresetCustom";
 
-  const refresh = () => {
-    const value = (menu.value as string) || (getPref(prefKey) as string) || "";
+  const apply = (value: string, customName: string) => {
+    const name = value === "__custom__" ? customName.trim() : value;
     detail.textContent =
-      detailMap[value] ??
-      (value
-        ? `Custom preset "${value}" — described by your docling-serve build.`
-        : "");
+      detailMap[name] ??
+      (name
+        ? `Custom preset "${name}" — described by your docling-serve build.`
+        : value === "__custom__"
+          ? "Type a preset name your docling-serve build supports. Empty uses the server's default."
+          : "");
   };
-  menu.addEventListener("command", refresh);
-  refresh();
+  // Live: read the elements (prefs may lag a pick or a keystroke).
+  const fromElements = () =>
+    apply((menu.value as string) ?? "", (custom?.value as string) ?? "");
+  menu.addEventListener("command", fromElements);
+  custom?.addEventListener("input", fromElements);
+  // Re-sync (load, Reset): read the prefs.
+  const fromPref = () =>
+    apply(
+      ((getPref(prefKey) as string) ?? "").trim(),
+      (getPref(customKey) as string) ?? "",
+    );
+  fromPref();
+  return fromPref;
 }
 
 /**
@@ -203,10 +277,9 @@ function bindPresetDetail(
  * and rewritten dynamically — saves declaring four separate input widgets
  * bound to four prefs that all mean roughly the same thing.
  */
-function bindAuthSchemeToggle(win: Window): void {
+function bindAuthSchemeToggle(win: Window): (() => void) | void {
   const menu = win.document.getElementById("zotero-docling-auth-scheme") as
-    | (HTMLElement & { value?: string })
-    | null;
+    (HTMLElement & { value?: string }) | null;
   const usernameRow = win.document.getElementById(
     "zotero-docling-auth-username-row",
   ) as HTMLElement | null;
@@ -224,8 +297,8 @@ function bindAuthSchemeToggle(win: Window): void {
   ) as HTMLElement | null;
   if (!menu || !usernameRow || !headerNameRow || !secretRow) return;
 
-  const refresh = () => {
-    const scheme = ((menu.value as string) || "none").toLowerCase();
+  const apply = (value: string | undefined) => {
+    const scheme = (value || "none").toLowerCase();
     const showSecret = scheme !== "none";
     usernameRow.hidden = scheme !== "basic";
     headerNameRow.hidden = scheme !== "custom";
@@ -233,15 +306,15 @@ function bindAuthSchemeToggle(win: Window): void {
     if (help) help.hidden = !showSecret;
     // Relabel the secret input so the field name matches the chosen scheme.
     if (secretLabel) {
-      let id = "pref-auth-secret";
-      if (scheme === "bearer") id = "pref-auth-token";
-      else if (scheme === "basic") id = "pref-auth-password";
-      else if (scheme === "custom") id = "pref-auth-header-value";
-      secretLabel.setAttribute("data-l10n-id", id);
+      secretLabel.setAttribute("data-l10n-id", authSecretLabelId(scheme));
     }
   };
-  menu.addEventListener("command", refresh);
-  refresh();
+  // On a menu pick, read the menu itself (its pref may not be written yet);
+  // when re-syncing (load, Reset), read the pref — the source of truth.
+  menu.addEventListener("command", () => apply(menu.value as string));
+  const fromPref = () => apply(getPref("authScheme") as string);
+  fromPref();
+  return fromPref;
 }
 
 /**
@@ -333,7 +406,7 @@ function bindTestConnection(win: Window): void {
 }
 
 /** Pipeline radiogroup → show/hide the VLM section. */
-function bindPipelineToggle(win: Window): void {
+function bindPipelineToggle(win: Window): (() => void) | void {
   const group = win.document.getElementById(
     "zotero-docling-pipeline-group",
   ) as HTMLElement | null;
@@ -342,19 +415,26 @@ function bindPipelineToggle(win: Window): void {
   ) as HTMLElement | null;
   if (!vlmSection) return;
 
-  const refresh = () => {
-    const pipeline = (getPref("pipeline") as string) ?? "standard";
-    vlmSection.hidden = pipeline !== "vlm";
+  const apply = (pipeline: string | undefined) => {
+    vlmSection.hidden = (pipeline ?? "standard") !== "vlm";
   };
-  if (group) group.addEventListener("command", refresh);
-  refresh();
+  // On a pick, read the radiogroup (its pref may not be written yet, which
+  // left the VLM section one click behind); on re-sync, read the pref.
+  if (group) {
+    group.addEventListener("command", () =>
+      apply((group as HTMLElement & { value?: string }).value),
+    );
+  }
+  const fromPref = () => apply(getPref("pipeline") as string);
+  fromPref();
+  return fromPref;
 }
 
 /**
  * "Reset to defaults" button → confirm dialog → clear every plugin pref.
  * Uses the Services.prompt cross-platform confirm dialog; user must opt-in.
  */
-function bindResetButton(win: Window): void {
+function bindResetButton(win: Window, refreshers: Array<() => void>): void {
   const btn = win.document.getElementById(
     "zotero-docling-reset",
   ) as HTMLElement | null;
@@ -362,64 +442,133 @@ function bindResetButton(win: Window): void {
     Zotero.debug(`${LOG} prefs: reset button not found`);
     return;
   }
-  btn.addEventListener("command", () => {
-    const Services = (globalThis as any).Services;
-    const title =
-      "Reset zotero-docling preferences?"; /* fluent doesn't resolve here */
-    const body =
-      "This reverts every plugin preference (Server URL, auto-convert, pipeline, VLM preset, output, etc.) to its built-in default. Your Zotero library and existing markdown attachments are not touched.";
-    const confirmed = Services?.prompt?.confirm?.(win, title, body) ?? true;
-    if (!confirmed) return;
-
-    const PREFIX = addon.data.config.prefsPrefix;
-    let cleared = 0;
-    for (const key of ALL_PREF_KEYS) {
-      try {
-        Zotero.Prefs.clear(`${PREFIX}.${key}`, true);
-        cleared++;
-      } catch (e) {
-        Zotero.debug(
-          `${LOG} prefs: clear ${key} failed: ${(e as Error).message}`,
-        );
-      }
-    }
-    Zotero.debug(`${LOG} prefs: reset ${cleared} keys to defaults`);
-
-    // ProgressWindow toast for confirmation
+  btn.addEventListener("command", async () => {
+    // One reset at a time: a double-click during the awaits below would
+    // otherwise open two prompts.
+    if (btn.hasAttribute("disabled")) return;
+    btn.setAttribute("disabled", "true");
     try {
-      const pw = new Zotero.ProgressWindow({ closeOnClick: true });
-      pw.changeHeadline("zotero-docling");
-      pw.addDescription("Preferences reset to defaults");
-      pw.show();
-      setTimeout(() => {
-        try {
-          pw.close();
-        } catch {
-          /* ignore */
-        }
-      }, 3000);
-    } catch {
-      /* ignore — toast is nice-to-have */
+      await resetPrefs(win, refreshers);
+    } finally {
+      btn.removeAttribute("disabled");
     }
   });
 }
 
+async function resetPrefs(
+  win: Window,
+  refreshers: Array<() => void>,
+): Promise<void> {
+  const Services = (globalThis as any).Services;
+  // Translated text from preferences.ftl, with English fallbacks if the
+  // pane's localization isn't available.
+  let [title, body, done] = [
+    "Reset zotero-docling preferences?",
+    "This reverts every plugin preference (Server URL, auto-convert, pipeline, VLM preset, output, etc.) to its built-in default. Your Zotero library and existing markdown attachments are not touched.",
+    "Preferences reset to defaults",
+  ];
+  try {
+    const l10n = (win.document as any).l10n;
+    const values = await l10n?.formatValues?.([
+      { id: getLocaleID("pref-reset-confirm-title") },
+      { id: getLocaleID("pref-reset-confirm-body") },
+      { id: getLocaleID("pref-reset-done") },
+    ]);
+    if (values?.[0]) title = values[0];
+    if (values?.[1]) body = values[1];
+    if (values?.[2]) done = values[2];
+  } catch {
+    /* keep English */
+  }
+  // Fail closed: no prompt service means no reset.
+  if (!Services?.prompt?.confirm) {
+    Zotero.debug(`${LOG} prefs: no prompt service — reset not confirmed`);
+    return;
+  }
+  if (!Services.prompt.confirm(win, title, body)) return;
+
+  const PREFIX = addon.data.config.prefsPrefix;
+  let cleared = 0;
+  for (const key of ALL_PREF_KEYS) {
+    try {
+      Zotero.Prefs.clear(`${PREFIX}.${key}`, true);
+      cleared++;
+    } catch (e) {
+      Zotero.debug(
+        `${LOG} prefs: clear ${key} failed: ${(e as Error).message}`,
+      );
+    }
+  }
+  Zotero.debug(`${LOG} prefs: reset ${cleared} keys to defaults`);
+
+  // Bring the dynamic parts of the pane back in line with the defaults.
+  for (const refresh of refreshers) {
+    try {
+      refresh();
+    } catch {
+      /* one stale section shouldn't block the rest */
+    }
+  }
+
+  // ProgressWindow toast for confirmation
+  try {
+    const pw = new Zotero.ProgressWindow({ closeOnClick: true });
+    pw.changeHeadline("zotero-docling");
+    pw.addDescription(done);
+    pw.show();
+    setTimeout(() => {
+      try {
+        pw.close();
+      } catch {
+        /* ignore */
+      }
+    }, 3000);
+  } catch {
+    /* ignore — toast is nice-to-have */
+  }
+}
+
 /**
- * Each preset menulist has a hidden text input next to it.
- * Reveal it when "__custom__" is selected so the user can type any preset name.
+ * Each preset menulist has a text input next to it, bound to its own pref
+ * (`vlmPresetCustom` / `pictureDescriptionPresetCustom`). Reveal it when
+ * "Custom…" (`__custom__`) is selected so the user can type any preset name.
  */
-function bindPresetCustomToggle(win: Window, kind: "vlm" | "pic"): void {
+function bindPresetCustomToggle(
+  win: Window,
+  kind: "vlm" | "pic",
+): (() => void) | void {
   const menu = win.document.getElementById(
     `zotero-docling-${kind}-preset-menu`,
   ) as (HTMLElement & { value?: string }) | null;
   const custom = win.document.getElementById(
     `zotero-docling-${kind}-preset-custom`,
-  ) as HTMLElement | null;
+  ) as (HTMLElement & { value?: string }) | null;
   if (!menu || !custom) return;
 
-  const refresh = () => {
-    custom.hidden = menu.value !== "__custom__";
+  // One-time migration: older versions saved a typed name straight into the
+  // menu's pref, which the menu can't show (audit M10).
+  const menuKey = kind === "vlm" ? "vlmPreset" : "pictureDescriptionPreset";
+  const customKey =
+    kind === "vlm" ? "vlmPresetCustom" : "pictureDescriptionPresetCustom";
+  const known = Array.from(menu.querySelectorAll("menuitem")).map(
+    (el) => (el as Element).getAttribute("value") ?? "",
+  );
+  const migration = migrateLegacyCustomPreset(
+    ((getPref(menuKey) as string) ?? "").trim(),
+    known,
+  );
+  if (migration) {
+    setPref(menuKey, migration.preset);
+    setPref(customKey, migration.custom);
+    menu.value = migration.preset;
+    custom.value = migration.custom;
+  }
+
+  const apply = (value: string | undefined) => {
+    custom.hidden = value !== "__custom__";
   };
-  menu.addEventListener("command", refresh);
-  refresh();
+  menu.addEventListener("command", () => apply(menu.value as string));
+  const fromPref = () => apply(getPref(menuKey) as string);
+  fromPref();
+  return fromPref;
 }

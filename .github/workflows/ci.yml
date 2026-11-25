@@ -4,9 +4,12 @@ on:
   push:
     branches:
       - main
+  # Any base branch, so stacked PRs (PR 2 based on PR 1's branch, ...) get CI.
   pull_request:
-    branches:
-      - main
+
+# Least-privilege: CI only reads the repo; no job pushes commits, releases, or comments.
+permissions:
+  contents: read
 
 jobs:
   lint:
@@ -15,9 +18,11 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GitHub_TOKEN }}
     steps:
       - name: Setup JS
-        uses: zotero-plugin-dev/workflows/setup-js@main
+        uses: zotero-plugin-dev/workflows/setup-js@fdcc78c01af94cd1a25f88fcc529115d839867f1 # v1.1.0
       - name: Run Lint
         run: npm run lint:check
+      - name: Check XHTML well-formedness
+        run: npm run check:xhtml
 
   build:
     runs-on: ubuntu-latest
@@ -25,7 +30,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GitHub_TOKEN }}
     steps:
       - name: Setup JS
-        uses: zotero-plugin-dev/workflows/setup-js@main
+        uses: zotero-plugin-dev/workflows/setup-js@fdcc78c01af94cd1a25f88fcc529115d839867f1 # v1.1.0
       - name: Run Build
         run: npm run build
       - name: Upload build result
@@ -34,11 +39,37 @@ jobs:
           name: build-result
           path: .scaffold/build
 
+  # Tests run inside a real Zotero. Supported releases are pinned and
+  # required; beta is an early warning only. (Zotero 7 was dropped in 0.5.0;
+  # 0.4.x is the last line for it.) Bump the pinned versions when new point
+  # releases come out.
   test:
+    name: test (${{ matrix.zotero.name }})
     runs-on: ubuntu-latest
     needs:
       - build
+    continue-on-error: ${{ matrix.zotero.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        zotero:
+          - name: Zotero 8.0.4
+            url: https://download.zotero.org/client/release/8.0.4/Zotero-8.0.4_linux-x86_64.tar.xz
+            experimental: false
+          - name: Zotero 10.0.6
+            url: https://download.zotero.org/client/release/10.0.6/Zotero-10.0.6_linux-x86_64.tar.xz
+            experimental: false
+          - name: Zotero beta
+            url: https://www.zotero.org/download/client/dl?platform=linux-x86_64&channel=beta
+            experimental: true
     steps:
       - name: Setup JS
-        uses: zotero-plugin-dev/workflows/setup-js@main
+        uses: zotero-plugin-dev/workflows/setup-js@fdcc78c01af94cd1a25f88fcc529115d839867f1 # v1.1.0
+      - name: Download ${{ matrix.zotero.name }}
+        # The test runner skips its own (beta) download when this env var is set.
+        run: |
+          wget -q -O "$RUNNER_TEMP/zotero.tar" "${{ matrix.zotero.url }}"
+          mkdir -p "$RUNNER_TEMP/zotero"
+          tar -xf "$RUNNER_TEMP/zotero.tar" -C "$RUNNER_TEMP/zotero"
+          echo "ZOTERO_PLUGIN_ZOTERO_BIN_PATH=$RUNNER_TEMP/zotero/Zotero_linux-x86_64/zotero" >> "$GITHUB_ENV"
       - run: npm run test

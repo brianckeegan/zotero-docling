@@ -14,7 +14,7 @@
 // (#401), so a client-side abort would just hide a still-running conversion
 // from the user without saving any compute. See README "Known limitations".
 
-import { getString } from "../utils/locale";
+import { getLocaleID, getString } from "../utils/locale";
 import {
   convertAttachment,
   applyStatusTagsToParents,
@@ -30,10 +30,10 @@ import {
 import {
   getPDFAttachments,
   getLocalFilePath,
-  removeMatchingMdChild,
   findMatchingMdChild,
 } from "../utils/zotero";
 import { getPref, setPref } from "../utils/prefs";
+import { busyMessage, releaseBatch, tryAcquireBatch } from "../utils/batchLock";
 import { notifyOnBatchComplete } from "../utils/notification";
 import { ConcurrencyLimiter } from "../utils/concurrencyLimiter";
 import { truncateMiddle, formatDuration } from "../utils/format";
@@ -41,12 +41,44 @@ import { onExportMarkdownZipClick } from "./markdownZipExport";
 import { onRemoveImagesClick, resolveMdTargets } from "./removeImages";
 
 const LOG = "[Docling/menu]";
-const MENU_CONVERT_ID = "zotero-docling-convert";
-const MENU_RECONVERT_ID = "zotero-docling-reconvert";
-const MENU_EXPORT_MD_ZIP_ID = "zotero-docling-export-md-zip";
-const TOOLS_EXPORT_MD_ZIP_ID = "zotero-docling-tools-export-md-zip";
-const MENU_REMOVE_IMAGES_ID = "zotero-docling-remove-images";
-const TOOLS_REMOVE_IMAGES_ID = "zotero-docling-tools-remove-images";
+// MenuManager registration IDs (one per target popup).
+const ITEM_MENU_ID = "zotero-docling-item-menu";
+const TOOLS_MENU_ID = "zotero-docling-tools-menu";
+
+/**
+ * The key Zotero stores a menu under, which unregisterMenu() expects:
+ * CSS.escape(`${pluginID}-${menuID}`) (pluginAPIBase.mjs). registerMenu()
+ * returns it, but after a hot reload we only have our own IDs, so derive it.
+ */
+function registeredKey(menuID: string): string {
+  // Equivalent to CSS.escape for this ASCII, letter-initial string, without
+  // needing a window (none may be open during a reload on macOS).
+  return `${addon.data.config.addonID}-${menuID}`.replace(
+    /[^a-zA-Z0-9_-]/g,
+    "\\$&",
+  );
+}
+
+// Keys Zotero returned for our registrations (what unregisterMenu expects).
+let registeredKeys: string[] = [];
+
+/**
+ * registerMenu, retrying once after clearing a leftover registration with
+ * the same key (a previous copy of the plugin after a hot reload).
+ */
+function registerOnce(options: {
+  menuID: string;
+  [key: string]: unknown;
+}): string | false {
+  const MenuManager = (Zotero as any).MenuManager;
+  let key = MenuManager.registerMenu(options) as string | false;
+  if (!key) {
+    MenuManager.unregisterMenu(registeredKey(options.menuID));
+    key = MenuManager.registerMenu(options) as string | false;
+  }
+  if (key) registeredKeys.push(key);
+  return key;
+}
 
 // Re-exports — used by other modules (markdownZipExport.ts) that need to
 // resolve a Zotero selection in the same way the right-click handlers do.
@@ -101,8 +133,8 @@ function resolvePdfsToConvert(selection: Zotero.Item[]): Zotero.Item[] {
   return out;
 }
 
-function shouldShowConvert(): boolean {
-  return resolvePdfsToConvert(getSelectedItems()).length > 0;
+function shouldShowConvert(items: Zotero.Item[]): boolean {
+  return resolvePdfsToConvert(items).length > 0;
 }
 
 /**
@@ -110,8 +142,8 @@ function shouldShowConvert(): boolean {
  * already has a matching .md sibling — otherwise it would behave identically
  * to plain Convert and just clutter the menu.
  */
-function shouldShowReconvert(): boolean {
-  const pdfs = resolvePdfsToConvert(getSelectedItems());
+function shouldShowReconvert(items: Zotero.Item[]): boolean {
+  const pdfs = resolvePdfsToConvert(items);
   for (const pdf of pdfs) {
     const parentID = pdf.parentItemID;
     if (!parentID) continue;
@@ -141,10 +173,10 @@ function confirmReconvertWithUser(count: number): boolean {
   const Services = (globalThis as any).Services;
   const prompt = Services?.prompt;
   if (!prompt?.confirmEx) {
-    // No prompt service available (very unusual). Default to allowing the
-    // action — losing the confirm is preferable to silently blocking the
-    // user from re-converting at all.
-    return true;
+    // No prompt service (very unusual). Fail closed: never replace markdown
+    // without the user's confirmation.
+    Zotero.debug(`${LOG} confirmReconvert: no prompt service — not proceeding`);
+    return false;
   }
 
   const Ci = (globalThis as any).Components?.interfaces;
@@ -165,9 +197,15 @@ function confirmReconvertWithUser(count: number): boolean {
     (Zotero as any).getActiveZoteroPane?.()?.document?.defaultView ??
     null;
 
-  const title = "Re-convert with Docling?";
-  const body = `This will delete the existing markdown attachment${count === 1 ? "" : "s"} on ${count} selected PDF${count === 1 ? "" : "s"} and run conversion again. Any manual edits to the existing markdown will be lost.`;
-  const checkLabel = "Don't ask again";
+  const title = getString("reconvert-confirm-title");
+  // With "Attach to item" off nothing is replaced in Zotero — say so.
+  const body = getString(
+    ((getPref("attachToItem") ?? true) as boolean)
+      ? "reconvert-confirm-body-replace"
+      : "reconvert-confirm-body-export",
+    { args: { count } },
+  );
+  const checkLabel = getString("confirm-dont-ask-again");
   const check = { value: false };
 
   let pressed: number;
@@ -177,7 +215,7 @@ function confirmReconvertWithUser(count: number): boolean {
       title,
       body,
       flags,
-      "Re-convert", // button 0 (left)
+      getString("reconvert-confirm-button"), // button 0 (left)
       null, // button 1 — title comes from CANCEL flag
       null, // button 2 — unused
       checkLabel,
@@ -185,9 +223,9 @@ function confirmReconvertWithUser(count: number): boolean {
     );
   } catch (e) {
     Zotero.debug(
-      `${LOG} confirmReconvert prompt threw, allowing action: ${(e as Error).message}`,
+      `${LOG} confirmReconvert prompt threw, not proceeding: ${(e as Error).message}`,
     );
-    return true;
+    return false;
   }
 
   // Button index 0 is "Re-convert"; 1 is Cancel.
@@ -211,12 +249,12 @@ function confirmReconvertWithUser(count: number): boolean {
  *
  * Exported so the markdown zip export "Convert first" path can drive the same
  * orchestrator from outside menu.ts without duplicating the progress-window
- * + batchInFlight + concurrency + tag logic.
+ * + batch lock + concurrency + tag logic.
  */
 export async function runBatch(
   pdfs: Zotero.Item[],
   opts: { force: boolean; menuLabel: string },
-): Promise<void> {
+): Promise<boolean> {
   // Re-convert (force) only acts on items that actually have a matching .md
   // to replace — otherwise the menu wording "(replace)" would mislead users
   // into thinking selection without existing .md was supposed to be skipped.
@@ -230,127 +268,148 @@ export async function runBatch(
       return findMatchingMdChild(parentID, pdfName) !== null;
     });
     if (pdfs.length === 0) {
-      toast("Docling", "No matching .md files to replace in selection", false);
-      return;
+      toast("Docling", getString("toast-no-md-to-replace"), false);
+      return false;
     }
   }
 
   if (pdfs.length === 0) {
-    toast("Docling", "No PDF attachments in selection", false);
-    return;
+    toast("Docling", getString("toast-no-pdfs"), false);
+    return false;
   }
+  // The plugin is being disabled, updated or Zotero is quitting.
+  if (!addon.data.alive) return false;
 
-  // Re-convert is destructive — it deletes existing .md attachments before
-  // running a fresh conversion. Confirm with the user unless they've opted
-  // out via the "Don't ask again" checkbox. Confirm BEFORE setting any
-  // in-flight state so cancelling is a clean no-op.
+  // Re-convert replaces existing .md attachments (the old ones go to the
+  // trash once the new conversion is attached). Confirm with the user
+  // unless they've opted out via the "Don't ask again" checkbox. Confirm
+  // BEFORE taking the lock so cancelling is a clean no-op.
   if (opts.force && ((getPref("confirmReconvert") ?? true) as boolean)) {
-    if (!confirmReconvertWithUser(pdfs.length)) return;
+    if (!confirmReconvertWithUser(pdfs.length)) return false;
   }
 
-  // Only one batch at a time. A second click while a batch is running
-  // would otherwise spawn a parallel orchestrator that fights over the
-  // shared managed-progress window.
-  //
-  // The flag MUST be set synchronously before the first `await` — otherwise
-  // two rapid clicks both pass the check, both await the preflight, and
-  // both proceed to spawn a batch.
-  if (addon.data.batchInFlight) {
-    toast(
-      "Docling",
-      "A conversion batch is already running — wait for it to finish",
-      false,
-    );
-    return;
+  // Only one batch at a time (menu, auto-convert and Remove Images share
+  // the lock). Acquire is synchronous, so two rapid clicks can't both pass.
+  if (!tryAcquireBatch("menu")) {
+    toast("Docling", busyMessage(), false);
+    return false;
   }
-  addon.data.batchInFlight = true;
-
-  // Pre-flight: avoid N×wall-of-error toasts when docling-serve isn't running.
-  if (!(await preflightServer())) {
-    addon.data.batchInFlight = false;
-    toast("Docling", "docling-serve isn't running — start it and retry", false);
-    return;
-  }
-
-  const limit = Math.max(
-    1,
-    Math.min(8, Number(getPref("maxConcurrency") ?? 1) || 1),
-  );
-  const limiter = new ConcurrencyLimiter(limit);
 
   const total = pdfs.length;
-  // Hide the noisy "concurrency=1" suffix when the user is on the default —
-  // only surface it when they've actually opted into parallelism.
-  const concurrencyNote = limit > 1 ? ` · concurrency=${limit}` : "";
-  startManagedProgress(
-    `${opts.menuLabel}: converting…`,
-    `${total} PDF${total === 1 ? "" : "s"}${concurrencyNote}`,
-  );
-
   let done = 0;
   let ok = 0;
   let skipped = 0;
   let failed = 0;
   const failureMessages: string[] = [];
+  const warnings: string[] = [];
   const skipReasons = new Set<string>();
   const batchResults: Array<{ item: Zotero.Item; result: ConvertResult }> = [];
 
-  // Update headline as each item completes — gives the user a live N-of-M
-  // counter even when items run in parallel. The managed-progress layer
-  // routes this to the visible window if Zotero is focused, or just
-  // updates internal state if blurred (focus event will re-show).
-  const refreshHeadline = (currentName?: string) => {
-    const label = currentName
-      ? `${opts.menuLabel}: (${done}/${total}) ${currentName}`
-      : `${opts.menuLabel}: (${done}/${total})`;
-    updateManagedHeadline(label);
-  };
-
-  const runOne = async (item: Zotero.Item): Promise<void> => {
-    // For re-convert, delete the matching existing .md attachment first so
-    // the fresh conversion doesn't stack a second sibling.
-    if (opts.force) {
-      const parentID = item.parentItemID;
-      const pdfPath = await getLocalFilePath(item);
-      if (parentID && pdfPath) {
-        await removeMatchingMdChild(parentID, PathUtils.filename(pdfPath));
-      }
-    }
-
-    // Per-item progress: show this PDF's filename while it's working.
-    let displayName = "";
-    try {
-      const p = await getLocalFilePath(item);
-      if (p) displayName = truncateMiddle(PathUtils.filename(p), 40);
-    } catch {
-      /* best-effort */
-    }
-    refreshHeadline(displayName);
-
-    let result: ConvertResult;
-    try {
-      result = await convertAttachment(item, { force: opts.force });
-    } catch (e) {
-      result = { status: "error", message: (e as Error).message };
-    }
-    batchResults.push({ item, result });
-    if (result.status === "ok") ok++;
-    else if (result.status === "skipped") {
-      skipped++;
-      skipReasons.add(result.reason);
-    } else {
-      failed++;
-      failureMessages.push(result.message);
-    }
-    done++;
-    refreshHeadline();
-  };
-
+  // Everything after the lock is taken runs inside this try, so the lock is
+  // released however the batch ends — including a throw in preflight or
+  // progress setup (audit M1). An unexpected throw is reported below rather
+  // than leaving the progress window stuck on "converting…".
+  let unexpected: Error | null = null;
   try {
-    await Promise.all(pdfs.map((item) => limiter.run(() => runOne(item))));
+    // Pre-flight: avoid N×wall-of-error toasts when docling-serve isn't running.
+    if (!(await preflightServer())) {
+      toast("Docling", getString("toast-server-not-running"), false);
+      return false;
+    }
+
+    const limit = Math.max(
+      1,
+      Math.min(8, Number(getPref("maxConcurrency") ?? 1) || 1),
+    );
+    const limiter = new ConcurrencyLimiter(limit);
+
+    // Hide the noisy "concurrency=1" suffix when the user is on the default —
+    // only surface it when they've actually opted into parallelism.
+    const concurrencyNote = limit > 1 ? ` · concurrency=${limit}` : "";
+    startManagedProgress(
+      `${opts.menuLabel}: converting…`,
+      `${total} PDF${total === 1 ? "" : "s"}${concurrencyNote}`,
+    );
+
+    // Update headline as each item completes — gives the user a live N-of-M
+    // counter even when items run in parallel. Best-effort: a UI hiccup must
+    // never abort the batch.
+    const refreshHeadline = (currentName?: string) => {
+      const label = currentName
+        ? `${opts.menuLabel}: (${done}/${total}) ${currentName}`
+        : `${opts.menuLabel}: (${done}/${total})`;
+      try {
+        updateManagedHeadline(label);
+      } catch {
+        /* progress window gone — keep converting */
+      }
+    };
+
+    const runOne = async (item: Zotero.Item): Promise<void> => {
+      // Per-item progress: show this PDF's filename while it's working.
+      let displayName = "";
+      try {
+        const p = await getLocalFilePath(item);
+        if (p) displayName = truncateMiddle(PathUtils.filename(p), 40);
+      } catch {
+        /* best-effort */
+      }
+      refreshHeadline(displayName);
+
+      let result: ConvertResult;
+      try {
+        // Stop sending new PDFs once shutdown has begun (audit M7).
+        result = addon.data.alive
+          ? await convertAttachment(item, { force: opts.force })
+          : { status: "skipped", reason: "Plugin is shutting down" };
+      } catch (e) {
+        result = { status: "error", message: (e as Error).message };
+      }
+      batchResults.push({ item, result });
+      if (result.status === "ok") {
+        ok++;
+        if (result.warning) warnings.push(result.warning);
+      } else if (result.status === "skipped") {
+        skipped++;
+        skipReasons.add(result.reason);
+      } else {
+        failed++;
+        failureMessages.push(result.message);
+      }
+      done++;
+      refreshHeadline();
+    };
+
+    // allSettled, not all: the lock must stay held until EVERY item has
+    // finished, even if one of them throws (audit M3).
+    await Promise.allSettled(
+      pdfs.map((item) => limiter.run(() => runOne(item))),
+    );
     await applyStatusTagsToParents(batchResults);
+  } catch (e) {
+    unexpected = e as Error;
+    log(`batch failed unexpectedly: ${unexpected.message}`);
   } finally {
-    addon.data.batchInFlight = false;
+    releaseBatch();
+  }
+
+  if (unexpected) {
+    try {
+      finishManagedProgress(
+        false,
+        `${opts.menuLabel}: failed`,
+        `OK ${ok} · skipped ${skipped} · failed ${failed}\n${unexpected.message}`,
+      );
+    } catch {
+      toast(
+        "Docling",
+        getString("toast-batch-failed", {
+          args: { message: unexpected.message },
+        }),
+        false,
+      );
+    }
+    return true;
   }
 
   const allOk = failed === 0;
@@ -367,9 +426,11 @@ export async function runBatch(
   const body =
     failureMessages.length > 0
       ? failureMessages.slice(0, 2).join("\n")
-      : skipReasons.size > 0
-        ? Array.from(skipReasons).slice(0, 2).join("\n")
-        : undefined;
+      : warnings.length > 0
+        ? warnings.slice(0, 2).join("\n")
+        : skipReasons.size > 0
+          ? Array.from(skipReasons).slice(0, 2).join("\n")
+          : undefined;
   finishManagedProgress(
     allOk,
     allOk
@@ -384,23 +445,24 @@ export async function runBatch(
     allOk ? "Docling: done" : "Docling: finished with errors",
     summary,
   );
+  return true;
 }
 
 // ---------------------------------------------------------------------------
 //  Click handlers
 // ---------------------------------------------------------------------------
 
-async function onConvertClick(): Promise<void> {
+async function onConvertClick(items?: Zotero.Item[]): Promise<void> {
   log("onConvertClick");
-  const selection = getSelectedItems();
+  const selection = items ?? getSelectedItems();
   const pdfs = resolvePdfsToConvert(selection);
   log(`convert: selection=${selection.length} → pdfs=${pdfs.length}`);
   await runBatch(pdfs, { force: false, menuLabel: "Docling" });
 }
 
-async function onReconvertClick(): Promise<void> {
+async function onReconvertClick(items?: Zotero.Item[]): Promise<void> {
   log("onReconvertClick");
-  const selection = getSelectedItems();
+  const selection = items ?? getSelectedItems();
   const pdfs = resolvePdfsToConvert(selection);
   log(`reconvert: selection=${selection.length} → pdfs=${pdfs.length}`);
   await runBatch(pdfs, { force: true, menuLabel: "Docling (replace)" });
@@ -410,106 +472,95 @@ async function onReconvertClick(): Promise<void> {
 //  Registration
 // ---------------------------------------------------------------------------
 
-const ALL_MENU_IDS = [
-  MENU_CONVERT_ID,
-  MENU_RECONVERT_ID,
-  MENU_EXPORT_MD_ZIP_ID,
-  TOOLS_EXPORT_MD_ZIP_ID,
-  MENU_REMOVE_IMAGES_ID,
-  TOOLS_REMOVE_IMAGES_ID,
-];
+/**
+ * Register our entries with Zotero's MenuManager (Zotero 8+). Zotero renders
+ * them in every main window and removes them itself when the plugin is
+ * disabled, so there's no per-window bookkeeping. Labels are Fluent messages
+ * with a `.label` attribute from menus.ftl, which hooks.ts loads into each
+ * main window.
+ */
+export function registerMenus(): void {
+  unregisterMenus(); // idempotent
+  const pluginID = addon.data.config.addonID;
+  // The items of the window the menu was opened in. Visibility (onShowing)
+  // and the action (onCommand) both use these, so they can't disagree when
+  // several main windows have different selections.
+  const items = (ctx: { items?: Zotero.Item[] }) => ctx.items ?? [];
 
-export function registerMenu(): void {
-  // Hot-reload safety: kill previous registrations first.
-  for (const id of ALL_MENU_IDS) {
-    try {
-      ztoolkit.Menu.unregister(id);
-    } catch {
-      /* not present — fine */
-    }
-  }
-
-  // Item right-click: Convert
-  ztoolkit.Menu.register("item", {
-    tag: "menuitem",
-    id: MENU_CONVERT_ID,
-    label: getString("menuitem-convert"),
-    commandListener: () => {
-      void onConvertClick();
-    },
-    getVisibility: () => shouldShowConvert(),
+  const itemKey = registerOnce({
+    menuID: ITEM_MENU_ID,
+    pluginID,
+    target: "main/library/item",
+    menus: [
+      {
+        menuType: "menuitem",
+        l10nID: getLocaleID("menu-convert"),
+        onShowing: (_e: Event, ctx: any) =>
+          ctx.setVisible(shouldShowConvert(items(ctx))),
+        onCommand: (_e: Event, ctx: any) => void onConvertClick(items(ctx)),
+      },
+      {
+        // Only when there's already a matching .md to replace; otherwise
+        // this would duplicate plain Convert.
+        menuType: "menuitem",
+        l10nID: getLocaleID("menu-reconvert"),
+        onShowing: (_e: Event, ctx: any) =>
+          ctx.setVisible(shouldShowReconvert(items(ctx))),
+        onCommand: (_e: Event, ctx: any) => void onReconvertClick(items(ctx)),
+      },
+      {
+        // Shown whenever the selection resolves to ≥1 PDF; the export
+        // handler deals with missing markdown via a confirm dialog.
+        menuType: "menuitem",
+        l10nID: getLocaleID("menu-export-md-zip"),
+        onShowing: (_e: Event, ctx: any) =>
+          ctx.setVisible(shouldShowConvert(items(ctx))),
+        onCommand: (_e: Event, ctx: any) =>
+          void onExportMarkdownZipClick("selection", items(ctx)),
+      },
+      {
+        menuType: "menuitem",
+        l10nID: getLocaleID("menu-remove-images"),
+        onShowing: (_e: Event, ctx: any) =>
+          ctx.setVisible(resolveMdTargets(items(ctx)).length > 0),
+        onCommand: (_e: Event, ctx: any) =>
+          void onRemoveImagesClick("selection", items(ctx)),
+      },
+    ],
   });
 
-  // Item right-click: Re-convert (replace) — only when there's already a
-  // matching .md to replace, otherwise this duplicates plain Convert.
-  ztoolkit.Menu.register("item", {
-    tag: "menuitem",
-    id: MENU_RECONVERT_ID,
-    label: getString("menuitem-reconvert"),
-    commandListener: () => {
-      void onReconvertClick();
-    },
-    getVisibility: () => shouldShowReconvert(),
+  // Tools menu: reachable without a selection.
+  const toolsKey = registerOnce({
+    menuID: TOOLS_MENU_ID,
+    pluginID,
+    target: "main/menubar/tools",
+    menus: [
+      {
+        menuType: "menuitem",
+        l10nID: getLocaleID("menu-tools-export-md-zip"),
+        onCommand: () => void onExportMarkdownZipClick("tools"),
+      },
+      {
+        menuType: "menuitem",
+        l10nID: getLocaleID("menu-tools-remove-images"),
+        onCommand: () => void onRemoveImagesClick("tools"),
+      },
+    ],
   });
 
-  // Item right-click: Export markdown to .zip. Shown whenever
-  // the selection resolves to ≥1 PDF — the export handler then handles
-  // the missing-md case via a confirm dialog.
-  ztoolkit.Menu.register("item", {
-    tag: "menuitem",
-    id: MENU_EXPORT_MD_ZIP_ID,
-    label: getString("menuitem-export-md-zip"),
-    commandListener: () => {
-      void onExportMarkdownZipClick("selection");
-    },
-    getVisibility: () => shouldShowConvert(),
-  });
-
-  // Tools → Docling: Export markdown to .zip (.zip). Same handler as the
-  // right-click but reachable without a selection — falls back to "current
-  // library" when nothing is selected.
-  ztoolkit.Menu.register("menuTools", {
-    tag: "menuitem",
-    id: TOOLS_EXPORT_MD_ZIP_ID,
-    label: getString("menuitem-tools-export-md-zip"),
-    commandListener: () => {
-      void onExportMarkdownZipClick("tools");
-    },
-  });
-
-  // Item right-click: Remove images from markdown — only when the selection
-  // resolves to ≥1 markdown attachment to rewrite. The handler re-confirms
-  // before touching any file.
-  ztoolkit.Menu.register("item", {
-    tag: "menuitem",
-    id: MENU_REMOVE_IMAGES_ID,
-    label: getString("menuitem-remove-images"),
-    commandListener: () => {
-      void onRemoveImagesClick("selection");
-    },
-    getVisibility: () => resolveMdTargets(getSelectedItems()).length > 0,
-  });
-
-  // Tools → Docling: Remove images from markdown…. Same handler as the
-  // right-click; toasts a hint when nothing usable is selected.
-  ztoolkit.Menu.register("menuTools", {
-    tag: "menuitem",
-    id: TOOLS_REMOVE_IMAGES_ID,
-    label: getString("menuitem-tools-remove-images"),
-    commandListener: () => {
-      void onRemoveImagesClick("tools");
-    },
-  });
-
-  log(`registerMenu: registered ${ALL_MENU_IDS.join(", ")}`);
+  log(`registerMenus: ${itemKey}, ${toolsKey}`);
 }
 
-export function unregisterMenu(): void {
-  for (const id of ALL_MENU_IDS) {
+/** Remove our MenuManager registrations (Zotero also does this on disable). */
+export function unregisterMenus(): void {
+  const MenuManager = (Zotero as any).MenuManager;
+  // Must be the keys Zotero returned; the bare menuID silently does nothing.
+  for (const key of registeredKeys) {
     try {
-      ztoolkit.Menu.unregister(id);
+      MenuManager?.unregisterMenu(key);
     } catch {
-      /* ignore */
+      /* already gone */
     }
   }
+  registeredKeys = [];
 }

@@ -17,7 +17,8 @@ import JSZip from "jszip";
 
 import { toast } from "./ui";
 import { runBatch, resolvePdfsToConvert, getSelectedItems } from "./menu";
-import { getLocalFilePath } from "../utils/zotero";
+import { getString } from "../utils/locale";
+import { findMatchingMdChild, getLocalFilePath } from "../utils/zotero";
 
 const LOG = "[Docling/zip]";
 
@@ -49,7 +50,8 @@ export function zipBaseName(parent: Zotero.Item | null): string {
   ).trim();
   if (!citationKey) {
     const extra = (parent.getField?.("extra") as string | undefined) ?? "";
-    const m = extra.match(/^Citation Key:\s*(\S+)/m);
+    // [ \t]*, not \s*: \s would reach onto the next line for an empty key.
+    const m = extra.match(/^Citation Key:[ \t]*(\S+)/m);
     if (m) citationKey = m[1];
   }
   const safe = (citationKey || parent.key || "unknown").replace(
@@ -70,22 +72,24 @@ export function zipBaseName(parent: Zotero.Item | null): string {
  *   zipUniqueName("vaswani17", taken)  // again → "vaswani17.2.md"
  */
 export function zipUniqueName(base: string, taken: Set<string>): string {
+  // Compare case-insensitively: "Smith2020.md" and "smith2020.md" are the
+  // same file once unzipped on macOS or Windows.
+  const claim = (name: string): boolean => {
+    const key = name.toLowerCase();
+    if (taken.has(key)) return false;
+    taken.add(key);
+    return true;
+  };
   const primary = `${base}.md`;
-  if (!taken.has(primary)) {
-    taken.add(primary);
-    return primary;
-  }
+  if (claim(primary)) return primary;
   for (let i = 1; i < 1000; i++) {
     const candidate = `${base}.${i}.md`;
-    if (!taken.has(candidate)) {
-      taken.add(candidate);
-      return candidate;
-    }
+    if (claim(candidate)) return candidate;
   }
   // Pathological — 1000 PDFs under one parent. Fall back to a key-suffixed
   // name so we never throw.
   const fallback = `${base}.${Date.now()}.md`;
-  taken.add(fallback);
+  taken.add(fallback.toLowerCase());
   return fallback;
 }
 
@@ -122,18 +126,7 @@ function planExport(pdfs: Zotero.Item[]): ZipRow[] {
     if (!parentID) continue;
     const parent = Zotero.Items.get(parentID);
     if (!parent) continue;
-    const pdfName = (pdf.attachmentFilename ?? "").toLowerCase();
-    const expectedMd = pdfName.replace(/\.pdf$/i, ".md");
-    let mdChild: Zotero.Item | null = null;
-    for (const cid of parent.getAttachments()) {
-      const child = Zotero.Items.get(cid);
-      if (!child) continue;
-      const cname = (child.attachmentFilename ?? "").toLowerCase();
-      if (cname === expectedMd) {
-        mdChild = child;
-        break;
-      }
-    }
+    const mdChild = findMatchingMdChild(parentID, pdf.attachmentFilename ?? "");
     out.push({ parent, pdf, mdChild });
   }
   return out;
@@ -175,8 +168,8 @@ function promptMissingMd(missing: number, total: number): MissingMdChoice {
     (Zotero as any).getActiveZoteroPane?.()?.document?.defaultView ??
     null;
 
-  const title = "Export markdown to .zip";
-  const body = `${missing} of ${total} selected PDF${total === 1 ? "" : "s"} have no Docling markdown yet.\n\nHow would you like to proceed?`;
+  const title = getString("zip-missing-title");
+  const body = `${getString("zip-missing-body", { args: { missing, total } })}\n\n${getString("zip-missing-question")}`;
 
   let pressed: number;
   try {
@@ -185,8 +178,8 @@ function promptMissingMd(missing: number, total: number): MissingMdChoice {
       title,
       body,
       flags,
-      "Skip and export",
-      "Convert first",
+      getString("zip-skip-and-export"),
+      getString("zip-convert-first"),
       null,
       null,
       { value: false },
@@ -227,8 +220,26 @@ async function promptSavePath(defaultName: string): Promise<string | null> {
     return null;
   }
   if (!picked) return null;
-  // Force the .zip extension if the user typed one without it.
-  return /\.zip$/i.test(picked) ? picked : `${picked}.zip`;
+  if (/\.zip$/i.test(picked)) return picked;
+  // The user typed a name without ".zip". The picker's overwrite check was
+  // for that exact name, so check the real target ourselves before
+  // IOUtils.write silently replaces it.
+  const withExt = `${picked}.zip`;
+  const exists = await IOUtils.exists(withExt).catch(() => false);
+  if (exists) {
+    const prompt = (globalThis as any).Services?.prompt;
+    const win = (Zotero as any).getMainWindow?.() ?? null;
+    const ok =
+      prompt?.confirm?.(
+        win,
+        getString("zip-replace-title"),
+        getString("zip-replace-body", {
+          args: { name: PathUtils.filename(withExt) },
+        }),
+      ) ?? false;
+    if (!ok) return null;
+  }
+  return withExt;
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +251,18 @@ interface BuildResult {
   exported: number;
   skipped: number;
   failedReads: number;
+}
+
+/**
+ * Read a markdown attachment for zipping. Read as a string rather than bytes:
+ * IOUtils.read() returns a Uint8Array from Zotero's realm, and JSZip's
+ * `instanceof Uint8Array` type check fails across realms in the plugin
+ * sandbox ("Can't read the data of ..."). Strings are primitives, so they
+ * pass in any realm, and JSZip encodes them back to UTF-8. Our .md files are
+ * always written with IOUtils.writeUTF8, so decoding as UTF-8 is lossless.
+ */
+export async function readMarkdownForZip(path: string): Promise<string> {
+  return IOUtils.readUTF8(path);
 }
 
 async function buildZip(rows: ZipRow[]): Promise<BuildResult> {
@@ -262,9 +285,9 @@ async function buildZip(rows: ZipRow[]): Promise<BuildResult> {
       failedReads++;
       continue;
     }
-    let bytes: Uint8Array;
+    let text: string;
     try {
-      bytes = await IOUtils.read(path);
+      text = await readMarkdownForZip(path);
     } catch (e) {
       log(`failed to read md ${path}: ${(e as Error).message}`);
       failedReads++;
@@ -272,7 +295,7 @@ async function buildZip(rows: ZipRow[]): Promise<BuildResult> {
     }
     const base = zipBaseName(row.parent);
     const entryName = zipUniqueName(base, taken);
-    zip.file(entryName, bytes);
+    zip.file(entryName, text);
     exported++;
   }
 
@@ -294,26 +317,21 @@ async function buildZip(rows: ZipRow[]): Promise<BuildResult> {
  */
 export async function onExportMarkdownZipClick(
   source: "selection" | "tools",
+  // Items from the menu's own context (the window it was opened in); the
+  // Tools menu has none and uses the active pane's selection.
+  items?: Zotero.Item[],
 ): Promise<void> {
   log(`export click source=${source}`);
-  const selection = getSelectedItems();
+  const selection = items ?? getSelectedItems();
   const pdfs = resolvePdfsToConvert(selection);
   if (pdfs.length === 0) {
-    toast(
-      "Docling",
-      "Select one or more items (or PDF attachments) to export.",
-      false,
-    );
+    toast("Docling", getString("zip-select-first"), false);
     return;
   }
 
   let rows = planExport(pdfs);
   if (rows.length === 0) {
-    toast(
-      "Docling",
-      "Selected PDFs have no parent items — cannot export.",
-      false,
-    );
+    toast("Docling", getString("zip-no-parents"), false);
     return;
   }
 
@@ -324,18 +342,17 @@ export async function onExportMarkdownZipClick(
     if (choice === "convert") {
       // Drive the existing batch orchestrator over only the PDFs that
       // need it. runBatch handles its own progress window, status tags,
-      // and batchInFlight guard. We re-plan afterwards to pick up the
-      // freshly-created .md children.
+      // and batch lock. We re-plan afterwards to pick up the
+      // freshly-created .md children. If runBatch didn't run (another
+      // batch holds the lock, server down) it has already told the user
+      // why — stop rather than export a silently partial zip.
       const needs = rows.filter((r) => !r.mdChild).map((r) => r.pdf);
-      await runBatch(needs, { force: false, menuLabel: "Docling" });
+      const ran = await runBatch(needs, { force: false, menuLabel: "Docling" });
+      if (!ran) return;
       rows = planExport(pdfs);
       const stillMissing = rows.filter((r) => !r.mdChild).length;
       if (stillMissing === rows.length) {
-        toast(
-          "Docling",
-          "Conversion produced no markdown — nothing to export.",
-          false,
-        );
+        toast("Docling", getString("zip-nothing-converted"), false);
         return;
       }
     }
@@ -352,32 +369,53 @@ export async function onExportMarkdownZipClick(
 
   toast(
     "Docling",
-    `Building zip with ${rows.length} item${rows.length === 1 ? "" : "s"}…`,
+    getString("zip-building", { args: { count: rows.length } }),
     true,
   );
   let built: BuildResult;
   try {
     built = await buildZip(rows);
   } catch (e) {
-    toast("Docling", `Failed to build zip: ${(e as Error).message}`, false);
+    toast(
+      "Docling",
+      getString("zip-build-failed", {
+        args: { message: (e as Error).message },
+      }),
+      false,
+    );
     return;
   }
 
   try {
     await IOUtils.write(outPath, built.zipBytes);
   } catch (e) {
-    toast("Docling", `Failed to write zip: ${(e as Error).message}`, false);
+    toast(
+      "Docling",
+      getString("zip-write-failed", {
+        args: { message: (e as Error).message },
+      }),
+      false,
+    );
     return;
   }
 
   const detailParts: string[] = [];
-  if (built.skipped > 0) detailParts.push(`${built.skipped} skipped (no .md)`);
-  if (built.failedReads > 0)
-    detailParts.push(`${built.failedReads} unreadable`);
+  if (built.skipped > 0) {
+    detailParts.push(
+      getString("zip-skipped-no-md", { args: { count: built.skipped } }),
+    );
+  }
+  if (built.failedReads > 0) {
+    detailParts.push(
+      getString("zip-unreadable", { args: { count: built.failedReads } }),
+    );
+  }
   const detail = detailParts.length > 0 ? ` — ${detailParts.join(", ")}` : "";
   toast(
     "Docling",
-    `Exported ${built.exported} markdown file${built.exported === 1 ? "" : "s"} to ${outPath}${detail}`,
+    getString("zip-exported", {
+      args: { count: built.exported, path: outPath },
+    }) + detail,
     built.exported > 0,
   );
 }
