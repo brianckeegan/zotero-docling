@@ -15,7 +15,18 @@
 
 import { toast } from "./ui";
 import { getSelectedItems } from "./menu";
-import { getLocalFilePath, findMatchingMdChild } from "../utils/zotero";
+import { getString } from "../utils/locale";
+import {
+  busyMessage,
+  isBatchRunning,
+  releaseBatch,
+  tryAcquireBatch,
+} from "../utils/batchLock";
+import {
+  getLocalFilePath,
+  findMatchingMdChild,
+  isMarkdownAttachment,
+} from "../utils/zotero";
 import { stripImagesFromMarkdown } from "../utils/stripImages";
 import { formatBytes } from "../utils/format";
 
@@ -27,15 +38,6 @@ function log(...args: unknown[]): void {
   } catch {
     /* shutting down */
   }
-}
-
-/** True for attachment items that look like markdown (.md or text/markdown). */
-function isMarkdownAttachment(item: Zotero.Item): boolean {
-  if ((item.itemType as string) !== "attachment") return false;
-  if (item.attachmentContentType === "text/markdown") return true;
-  return ((item.attachmentFilename ?? "") as string)
-    .toLowerCase()
-    .endsWith(".md");
 }
 
 /**
@@ -96,7 +98,8 @@ export function resolveMdTargets(selection: Zotero.Item[]): Zotero.Item[] {
 function confirmRemoveImages(count: number): boolean {
   const Services = (globalThis as any).Services;
   const prompt = Services?.prompt;
-  if (!prompt?.confirmEx) return true;
+  // Fail closed: this rewrites files, so never proceed unconfirmed.
+  if (!prompt?.confirmEx) return false;
 
   const Ci = (globalThis as any).Components?.interfaces;
   const STD =
@@ -116,8 +119,8 @@ function confirmRemoveImages(count: number): boolean {
     (Zotero as any).getActiveZoteroPane?.()?.document?.defaultView ??
     null;
 
-  const title = "Remove images from markdown?";
-  const body = `This rewrites ${count} markdown attachment${count === 1 ? "" : "s"} in place, replacing every embedded image with a small <!-- image --> placeholder.\n\nThe image data is removed for good — re-convert the PDF if you ever want it back.`;
+  const title = getString("remove-images-confirm-title");
+  const body = `${getString("remove-images-confirm-body", { args: { count } })}\n\n${getString("remove-images-confirm-warning")}`;
 
   let pressed: number;
   try {
@@ -126,15 +129,15 @@ function confirmRemoveImages(count: number): boolean {
       title,
       body,
       flags,
-      "Remove images", // button 0
+      getString("remove-images-confirm-button"), // button 0
       null, // button 1 — title comes from CANCEL flag
       null,
       null,
       { value: false },
     );
   } catch (e) {
-    log(`confirm prompt threw, allowing action: ${(e as Error).message}`);
-    return true;
+    log(`confirm prompt threw, not proceeding: ${(e as Error).message}`);
+    return false;
   }
   return pressed === 0;
 }
@@ -145,30 +148,33 @@ function confirmRemoveImages(count: number): boolean {
  */
 export async function onRemoveImagesClick(
   source: "selection" | "tools",
+  // See onExportMarkdownZipClick: context items when there are some.
+  items?: Zotero.Item[],
 ): Promise<void> {
   log(`remove-images click source=${source}`);
-  const targets = resolveMdTargets(getSelectedItems());
+  const targets = resolveMdTargets(items ?? getSelectedItems());
   if (targets.length === 0) {
-    toast(
-      "Docling",
-      "Select items with converted markdown (or .md attachments) first.",
-      false,
-    );
+    toast("Docling", getString("remove-images-select-first"), false);
     return;
   }
 
-  // Don't interleave with a running conversion batch — it may be writing
-  // the same .md attachments we're about to rewrite.
-  if (addon.data.batchInFlight) {
-    toast(
-      "Docling",
-      "A conversion batch is already running — wait for it to finish",
-      false,
-    );
+  // Don't interleave with a running batch — a conversion may be writing the
+  // same .md attachments we're about to rewrite. Refuse up front so the user
+  // isn't asked to confirm an action that can't happen.
+  if (isBatchRunning()) {
+    toast("Docling", busyMessage(), false);
     return;
   }
 
   if (!confirmRemoveImages(targets.length)) return;
+
+  // Hold the batch lock for the whole rewrite: a conversion (manual or
+  // auto) may otherwise write the same .md files concurrently (audit M4).
+  // Re-checked here because something may have started during the dialog.
+  if (!tryAcquireBatch("remove-images")) {
+    toast("Docling", busyMessage(), false);
+    return;
+  }
 
   let changed = 0;
   let imagesReplaced = 0;
@@ -176,48 +182,67 @@ export async function onRemoveImagesClick(
   let untouched = 0;
   let failed = 0;
 
-  for (const md of targets) {
-    const path = await getLocalFilePath(md);
-    if (!path) {
-      log(`md ${md.id} has no local file (cloud-only?) — skipping`);
-      failed++;
-      continue;
+  try {
+    for (const md of targets) {
+      const path = await getLocalFilePath(md);
+      if (!path) {
+        log(`md ${md.id} has no local file (cloud-only?) — skipping`);
+        failed++;
+        continue;
+      }
+      let before: string;
+      try {
+        before = await IOUtils.readUTF8(path);
+      } catch (e) {
+        log(`failed to read ${path}: ${(e as Error).message}`);
+        failed++;
+        continue;
+      }
+      const { markdown: after, replaced } = stripImagesFromMarkdown(before);
+      if (replaced === 0) {
+        untouched++;
+        continue;
+      }
+      try {
+        await IOUtils.writeUTF8(path, after);
+      } catch (e) {
+        log(`failed to write ${path}: ${(e as Error).message}`);
+        failed++;
+        continue;
+      }
+      changed++;
+      imagesReplaced += replaced;
+      // Embedded images are base64 (ASCII), so UTF-16 code-unit length is a
+      // faithful byte estimate for the part we removed.
+      bytesSaved += Math.max(0, before.length - after.length);
+      log(`stripped ${replaced} image(s) from ${path}`);
     }
-    let before: string;
-    try {
-      before = await IOUtils.readUTF8(path);
-    } catch (e) {
-      log(`failed to read ${path}: ${(e as Error).message}`);
-      failed++;
-      continue;
-    }
-    const { markdown: after, replaced } = stripImagesFromMarkdown(before);
-    if (replaced === 0) {
-      untouched++;
-      continue;
-    }
-    try {
-      await IOUtils.writeUTF8(path, after);
-    } catch (e) {
-      log(`failed to write ${path}: ${(e as Error).message}`);
-      failed++;
-      continue;
-    }
-    changed++;
-    imagesReplaced += replaced;
-    // Embedded images are base64 (ASCII), so UTF-16 code-unit length is a
-    // faithful byte estimate for the part we removed.
-    bytesSaved += Math.max(0, before.length - after.length);
-    log(`stripped ${replaced} image(s) from ${path}`);
+  } finally {
+    releaseBatch();
   }
 
   const detailParts: string[] = [];
-  if (untouched > 0) detailParts.push(`${untouched} had no images`);
-  if (failed > 0) detailParts.push(`${failed} failed`);
+  if (untouched > 0) {
+    detailParts.push(
+      getString("remove-images-untouched", { args: { count: untouched } }),
+    );
+  }
+  if (failed > 0) {
+    detailParts.push(
+      getString("remove-images-failed", { args: { count: failed } }),
+    );
+  }
   const detail = detailParts.length > 0 ? ` — ${detailParts.join(", ")}` : "";
   const summary =
     changed > 0
-      ? `Replaced ${imagesReplaced} image${imagesReplaced === 1 ? "" : "s"} in ${changed} file${changed === 1 ? "" : "s"}, saving ${formatBytes(bytesSaved)}${detail}`
-      : `No images found in ${targets.length} markdown file${targets.length === 1 ? "" : "s"}${detail}`;
+      ? getString("remove-images-done", {
+          args: {
+            images: imagesReplaced,
+            files: changed,
+            saved: formatBytes(bytesSaved),
+          },
+        }) + detail
+      : getString("remove-images-none", { args: { count: targets.length } }) +
+        detail;
   toast("Docling", summary, failed === 0);
 }

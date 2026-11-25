@@ -26,11 +26,18 @@ declare namespace _ZoteroTypes {
       "vlmPreset": string;
       "doPictureDescription": boolean;
       "pictureDescriptionPreset": string;
+      "vlmPresetCustom": string;
+      "pictureDescriptionPresetCustom": string;
       "ocrLang": string;
       "advancedJson": string;
       "useAsyncEndpoint": boolean;
       "asyncPollIntervalSec": number;
       "asyncMaxWaitMin": number;
+      "healthTimeoutSec": number;
+      "pollTimeoutSec": number;
+      "asyncUploadTimeoutMin": number;
+      "asyncResultTimeoutMin": number;
+      "syncTimeoutMin": number;
       "maxConcurrency": number;
       "addFrontmatter": boolean;
       "attachToItem": boolean;

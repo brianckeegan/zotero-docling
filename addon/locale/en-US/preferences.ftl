@@ -29,7 +29,7 @@ pref-max-concurrency-help = How many PDFs to convert in parallel within one batc
 pref-notify-on-complete =
     .label = OS notification when a batch finishes (only if Zotero isn't focused)
 pref-confirm-reconvert =
-    .label = Confirm before "Re-convert (replace)" deletes existing markdown
+    .label = Confirm before "Re-convert (replace)" replaces existing markdown
 
 pref-output-title = Output
 pref-attach-to-item =
@@ -82,13 +82,24 @@ pref-use-async =
     .label = Use the async endpoint (/v1/convert/file/async)
 pref-async-poll = Poll interval (s)
 pref-async-max-wait = Max wait (min)
-pref-async-max-wait-help = Client-side ceiling for a single async task. When exceeded, the plugin stops polling and reports an error. docling-serve has no per-task cancel API, so the server-side task may still complete in the background.
+pref-async-max-wait-help = Client-side ceiling for a single async task (default 240, maximum 1440; 0 = no limit). When exceeded, the plugin stops polling and reports an error. docling-serve has no per-task cancel API, so the server-side task may still complete in the background — set 0 if you'd rather the plugin always wait for it.
+
+pref-timeouts-title = Timeouts
+pref-timeouts-help = How long to wait for docling-serve before giving up on a request. A request that runs past its timeout is cancelled and reported as an error, so a stalled server can't hang a batch.
+pref-health-timeout = Connection check (s)
+pref-poll-timeout = Async status poll (s)
+pref-async-upload-timeout = Async upload (min)
+pref-async-result-timeout = Async result download (min)
+pref-sync-timeout = Sync conversion (min)
+pref-sync-timeout-help = docling-serve stops waiting on its own after DOCLING_SERVE_MAX_SYNC_WAIT (default 120 s). If you raise that on the server, raise this too — or turn on the async endpoint for long conversions.
 
 pref-advanced-title = Advanced
 pref-advanced-help = JSON object whose top-level keys are sent as form fields to docling-serve and override the controls above. Use this for any docling-serve option not exposed elsewhere in this pane. The full schema is documented in the docling-serve OpenAPI surface at /docs on your running server.
 
 pref-disclosure-conversion-collapsed = ▶ Conversion options
+pref-disclosure-conversion-expanded = ▼ Conversion options
 pref-disclosure-advanced-collapsed = ▶ Advanced
+pref-disclosure-advanced-expanded = ▼ Advanced
 
 pref-reset = Reset to defaults
 pref-reset-help = Reverts every zotero-docling preference (including Server URL) to its built-in default.

@@ -31,6 +31,11 @@ pref("doPictureClassification", false); // do_picture_classification
 pref("vlmPreset", "default"); // vlm_pipeline_preset (server allowlist)
 pref("doPictureDescription", false); // do_picture_description
 pref("pictureDescriptionPreset", "default"); // picture_description_preset
+// Free-text preset names used when a preset menu is set to "Custom…"
+// ("__custom__"). Kept separate from the menu's own pref so a custom name
+// survives reopening the pane and "__custom__" is never sent to the server.
+pref("vlmPresetCustom", "");
+pref("pictureDescriptionPresetCustom", "");
 pref("ocrLang", ""); // comma-separated, e.g. "en,fr,de"
 
 // Tier 4: advanced — JSON object whose top-level keys are merged into the
@@ -42,10 +47,22 @@ pref("advancedJson", "");
 pref("useAsyncEndpoint", false);
 pref("asyncPollIntervalSec", 5); // poll cadence in seconds (min 1)
 // Absolute client-side wait ceiling for one async task, in minutes. Does NOT
-// cancel the server-side task (no upstream cancel API; see README). Bounded
-// [1, 1440]. Default 240 (4 hours) — enough for most VLM batches but short
-// enough that a dead server doesn't leave the plugin spinning all day.
+// cancel the server-side task (no upstream cancel API; see README). Range
+// [0, 1440]; 0 = no limit. Default 240 (4 hours) — enough for most VLM
+// batches but short enough that a dead server doesn't leave the plugin
+// spinning all day.
 pref("asyncMaxWaitMin", 240);
+
+// Request timeouts (all user-adjustable; audit H2). Short calls in seconds,
+// long ones in minutes. A request that exceeds its timeout is cancelled and
+// reported, so a stalled server can't hang a batch.
+pref("healthTimeoutSec", 30); // Test Connection + pre-batch check
+pref("pollTimeoutSec", 30); // one async status poll
+pref("asyncUploadTimeoutMin", 5); // async submit (uploads the PDF)
+pref("asyncResultTimeoutMin", 10); // async result download
+// Sync conversion. docling-serve itself gives up after
+// DOCLING_SERVE_MAX_SYNC_WAIT (default 120 s) and returns a 504.
+pref("syncTimeoutMin", 10);
 
 // Phase 5a: client-side polish
 // Concurrent conversions in a batch (1 = sequential, current behavior).

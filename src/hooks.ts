@@ -1,8 +1,13 @@
 import { initLocale, getString } from "./utils/locale";
-import { registerMenu, unregisterMenu } from "./modules/menu";
+import { registerMenus, unregisterMenus } from "./modules/menu";
+import { migrateUrlCredentials } from "./modules/convert";
 import { registerNotifier, unregisterNotifier } from "./modules/notifier";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { onZoteroBlur, onZoteroFocus, toast } from "./modules/ui";
+import {
+  attachFocusListeners,
+  detachFocusListeners,
+} from "./modules/windowListeners";
 import { createZToolkit } from "./utils/ztoolkit";
 import { getPref, setPref } from "./utils/prefs";
 
@@ -14,8 +19,10 @@ async function onStartup(): Promise<void> {
   ]);
 
   initLocale();
+  safely("server URL credential migration", migrateUrlCredentials);
   registerPrefsPane();
-  registerMenu();
+  // Once for all windows: Zotero's MenuManager renders them per window.
+  safely("menu registration", registerMenus);
   registerNotifier();
 
   await Promise.all(
@@ -58,23 +65,42 @@ function maybeShowFirstRunNudge(): void {
   }, 2500);
 }
 
+/** Run one lifecycle step; a failure is logged and never stops the rest. */
+function safely(label: string, step: () => void): void {
+  try {
+    step();
+  } catch (e) {
+    Zotero.debug(
+      `[zotero-docling] ${label} failed (non-fatal): ${(e as Error).message}`,
+    );
+  }
+}
+
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   // Fresh ztoolkit per window — the toolkit owns DOM lifetime.
   addon.data.ztoolkit = createZToolkit();
   // (Template had insertFTLIfNeeded("...-mainWindow.ftl") here; we don't ship
   // a mainWindow.ftl, so omitting it avoids "Missing resource" log spam.)
 
+  // MenuManager menu labels are resolved by the window's own Fluent
+  // localization, so menus.ftl must be loaded into every main window. It's a
+  // separate file (not addon.ftl) because a version switch without a restart
+  // can serve the previous version's cached addon.ftl.
+  safely("menu strings", () =>
+    (win as any).MozXULElement.insertFTLIfNeeded(
+      `${addon.data.config.addonRef}-menus.ftl`,
+    ),
+  );
+
   // Blur/focus listeners drive the managed-progress hide-on-blur behaviour
   // (the "stop showing the toast when user switches apps" UX). Re-show on
-  // focus brings the latest state back.
-  try {
-    win.addEventListener("blur", () => onZoteroBlur());
-    win.addEventListener("focus", () => onZoteroFocus());
-  } catch (e) {
-    Zotero.debug(
-      `[zotero-docling] focus listeners failed (non-fatal): ${(e as Error).message}`,
-    );
-  }
+  // focus brings the latest state back. Stored so unload can remove them.
+  safely("focus listeners", () =>
+    attachFocusListeners(win, {
+      onBlur: onZoteroBlur,
+      onFocus: onZoteroFocus,
+    }),
+  );
 }
 
 /**
@@ -90,25 +116,26 @@ function registerPrefsPane(): void {
   });
 }
 
-async function onMainWindowUnload(_win: Window): Promise<void> {
-  ztoolkit.unregisterAll();
-  addon.data.dialog?.window?.close();
+async function onMainWindowUnload(win: Window): Promise<void> {
+  safely("focus listener removal", () => detachFocusListeners(win));
+  // No toolkit-wide unregisterAll() here: the toolkit is shared, so that
+  // would also remove things belonging to other open windows.
+  safely("dialog close", () => addon.data.dialog?.window?.close());
 }
 
 function onShutdown(): void {
-  try {
-    unregisterNotifier();
-  } catch {
-    /* ignore */
-  }
-  try {
-    unregisterMenu();
-  } catch {
-    /* ignore */
-  }
-  ztoolkit.unregisterAll();
-  addon.data.dialog?.window?.close();
+  // First, so running batches stop picking up new items (menu/notifier
+  // check `alive` between items).
   addon.data.alive = false;
+  // Every step runs even if an earlier one throws; previously one throw
+  // skipped the rest, including unregistering the instance (audit M7).
+  safely("notifier removal", unregisterNotifier);
+  for (const win of Zotero.getMainWindows()) {
+    safely("focus listener removal", () => detachFocusListeners(win));
+  }
+  safely("menu removal", unregisterMenus);
+  safely("toolkit cleanup", () => ztoolkit.unregisterAll());
+  safely("dialog close", () => addon.data.dialog?.window?.close());
   // @ts-expect-error - Plugin instance is not typed
   delete Zotero[addon.data.config.addonInstance];
 }
@@ -127,6 +154,9 @@ async function onPrefsEvent(
 }
 
 export default {
+  // Re-register menus (used by tests to restore the live plugin's menus
+  // after exercising shutdown).
+  registerMenus,
   onStartup,
   onShutdown,
   onMainWindowLoad,

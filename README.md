@@ -1,6 +1,6 @@
 # zotero-docling
 
-A Zotero plugin (Zotero 7 or later) that converts PDF attachments to structured
+A Zotero plugin (Zotero 8 – 10) that converts PDF attachments to structured
 Markdown using the [Docling](https://github.com/docling-project/docling)
 document-understanding pipeline, and attaches the resulting `.md` file back to
 the same parent item.
@@ -50,7 +50,10 @@ You need both.
 > [!NOTE]
 > Your very first conversion downloads model weights and can take 2–10
 > minutes while appearing to hang — that's normal, and later conversions
-> take seconds. See
+> take seconds. On the default sync endpoint that first run can hit a
+> timeout; if it does, just convert again once the download has finished,
+> or turn on the async endpoint (see
+> [Timeouts and wait limits](#timeouts-and-wait-limits)). See
 > [First conversion downloads model weights](#first-conversion-downloads-model-weights).
 
 ---
@@ -61,8 +64,10 @@ You need both.
   containing PDFs, or any mix of the two) → "Convert with Docling" → Markdown
   appears as a sibling attachment.
 - **Re-convert (replace)**: right-click → "Re-convert with Docling (replace)"
-  deletes the existing `.md` sibling and runs conversion again. A confirmation
-  dialog guards the destructive action (toggleable in prefs).
+  runs conversion again and, once the new `.md` is attached, moves the old one
+  to Zotero's trash (recoverable). If conversion fails, the old `.md` is left
+  untouched. A confirmation dialog guards the replacement (toggleable in
+  prefs).
 - **Auto-convert on import** (opt-in): newly imported PDFs are converted
   automatically with a 3-second debounce that handles bulk imports gracefully.
 - **Optional authentication**: Bearer token / Basic auth / Custom header
@@ -93,7 +98,9 @@ You need both.
 
 ## Requirements
 
-- **Zotero** 7.0 or later (tested on Zotero 9.0.3).
+- **Zotero** 8.0 – 10.0.x (tested on Zotero 10.0.3; CI runs the test suite on
+  Zotero 8.0.4, 10.0.6 and the current beta). For Zotero 7, use the 0.4.x
+  releases.
 - **[docling-serve](https://github.com/docling-project/docling-serve)** running
   locally or reachable over HTTP.
 - For VLM pipelines: enough RAM/disk for the model weights (Granite-Docling
@@ -212,11 +219,15 @@ Then install the `.xpi` via **Tools → Plugins** as above.
 1. **Settings**: open Zotero → **Settings → zotero-docling**.
 2. Verify the server URL (default `http://localhost:5001`) and click **Test
    Connection** — it should turn green. If it doesn't, make sure the
-   `docling-serve` terminal from the install step is still running.
+   `docling-serve` terminal from the install step is still running. If
+   docling-serve sits behind a reverse proxy at a sub-path, enter the full
+   base URL (e.g. `http://host:9292/upstream/docling-serve`).
 3. Right-click a PDF (or parent item) in your library → **Convert with
    Docling**. A `.md` child appears under the parent — within seconds once
    the [first-run model download](#first-conversion-downloads-model-weights)
    is out of the way.
+   Zotero lists plugin entries at the bottom of the menu, after a separator,
+   and on short screens may group them under a submenu.
 4. (Optional) tick **Auto-convert new PDF attachments** in Behavior to run
    conversion automatically as you import new PDFs.
 
@@ -225,6 +236,19 @@ VLM presets, enrichments, etc.) live inside two collapsible disclosure
 sections — **Conversion options** and **Advanced** — collapsed by default so
 the first-run experience stays focused on Server, Behavior, and Output.
 Click either header to expand. Hover any field for inline help.
+
+### Screenshots
+
+<table>
+  <tr>
+    <td valign="top"><img src="docs/images/context-menu.png" alt="Right-click a PDF attachment and choose Convert with Docling" width="270"></td>
+    <td valign="top"><img src="docs/images/preferences.png" alt="The zotero-docling preferences pane" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Convert from the right-click menu</em></td>
+    <td align="center"><em>Preferences pane</em></td>
+  </tr>
+</table>
 
 ### Exporting markdown to a .zip
 
@@ -294,21 +318,33 @@ Practical consequences:
 - Once the upstream cancel API exists, we'll add a cancel button that
   actually does what it says.
 
-### Client-side async wait ceiling (opt-in)
+### Timeouts and wait limits
 
-The async-transport poll loop runs **without** a client-side time limit by
-default — same honesty argument as cancel: docling-serve has no per-task
-cancel API, so abandoning a poll just orphans the server task. If you
-want a hard ceiling anyway, set **Max wait** to a positive minute value
-in **Settings → zotero-docling → Advanced → Async transport** (the
-**Advanced** section is collapsed by default; click to expand). When
-exceeded, the plugin stops polling and reports an error; the server-side
-task may still complete in the background.
+docling-serve has no per-task cancel API (see above), so **when the plugin
+gives up waiting, the server keeps converting in the background** — a
+timeout only stops the plugin from waiting, it never stops the work. That's
+why the limits are generous and all adjustable, in **Settings →
+zotero-docling → Advanced** (collapsed by default; click to expand):
 
-Separately, if poll requests start failing repeatedly (server crashed
-mid-task, network blip, etc.), a one-time toast surfaces around the
-tenth consecutive failure so a dead server isn't silent. This behavior
-is always on and doesn't depend on the Max wait setting.
+| Setting                          | Default                          | What it limits                                  |
+| -------------------------------- | -------------------------------- | ----------------------------------------------- |
+| Async transport → Max wait       | 240 min (0 = no limit, max 1440) | One async conversion, from submit to result     |
+| Timeouts → Connection check      | 30 s                             | Test Connection and the check before each batch |
+| Timeouts → Async status poll     | 30 s                             | One status request while an async job runs      |
+| Timeouts → Async upload          | 5 min                            | Uploading the PDF to the async endpoint         |
+| Timeouts → Async result download | 10 min                           | Downloading a finished async result             |
+| Timeouts → Sync conversion       | 10 min                           | One conversion on the sync (default) endpoint   |
+
+**Long conversions (VLM pipelines, very large PDFs, CPU-only machines,
+first-run model downloads): turn on the async endpoint** rather than
+raising the sync timeout. docling-serve's own sync endpoint gives up after
+`DOCLING_SERVE_MAX_SYNC_WAIT` (120 s by default) and returns a 504; if you
+raise that on the server, raise **Sync conversion** to match.
+
+If status polls start failing repeatedly (server crashed mid-task, network
+blip, a proxy returning errors), the plugin keeps trying until Max wait, and
+a one-time toast appears around the tenth consecutive failure so a dead
+server isn't silent.
 
 ---
 
